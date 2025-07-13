@@ -1,5 +1,12 @@
 """
 Google Cloud Function para procesar documentos PDF y generar embeddings.
+
+⚠️  LEGACY: Esta función es considerada legacy. Para nuevos despliegues,
+usar la nueva arquitectura orientada a eventos:
+- process_pdf.py (procesar PDFs a chunks)
+- create_embeddings.py (generar embeddings incremental)
+
+Ver docs/NUEVA_ARQUITECTURA.md para más información.
 """
 import os
 import json

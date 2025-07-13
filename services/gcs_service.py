@@ -49,10 +49,13 @@ class GCSService:
         if not self.bucket_name:
             raise ValueError("Se requiere el nombre del bucket de GCS (GCS_BUCKET_NAME)")
         
-        # Configurar credenciales si se proporciona la ruta
+        # Configurar credenciales (opcional para desarrollo local)
+        # En producción (Cloud Functions/Cloud Run) usar la cuenta de servicio asignada
         if self.credentials_path and os.path.exists(self.credentials_path):
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = self.credentials_path
-            logger.info(f"Credenciales configuradas desde: {self.credentials_path}")
+            logger.info(f"Credenciales configuradas desde archivo: {self.credentials_path}")
+        else:
+            logger.info("Usando credenciales por defecto (ADC - Application Default Credentials)")
         
         # Inicializar cliente de GCS
         try:
@@ -61,6 +64,9 @@ class GCSService:
             logger.info(f"Servicio GCS inicializado para el bucket: {self.bucket_name}")
         except Exception as e:
             logger.error(f"Error al inicializar cliente GCS: {str(e)}")
+            logger.error("Asegúrate de que las credenciales estén configuradas correctamente:")
+            logger.error("- Desarrollo: Usar archivo de credenciales (GCS_CREDENTIALS_PATH)")
+            logger.error("- Producción: Asignar cuenta de servicio al recurso (Cloud Function/Cloud Run)")
             raise
         
         # Directorio temporal para archivos descargados

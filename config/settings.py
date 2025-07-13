@@ -15,7 +15,8 @@ load_dotenv()
 
 # Google Cloud Storage
 GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME', 'drcecim-chatbot-storage')
-GCS_CREDENTIALS_PATH = os.getenv('GCS_CREDENTIALS_PATH')  # Ruta al archivo de credenciales
+# Opcional: solo para desarrollo local. En producción usar cuenta de servicio asignada.
+GCS_CREDENTIALS_PATH = os.getenv('GCS_CREDENTIALS_PATH')
 
 # Google Cloud Functions
 GCF_REGION = os.getenv('GCF_REGION', 'us-central1')
@@ -27,24 +28,14 @@ GCF_PROJECT_ID = os.getenv('GCF_PROJECT_ID')
 
 # API Keys y Modelos
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-PRIMARY_MODEL = os.getenv('PRIMARY_MODEL', 'gpt-4o-mini')
-FALLBACK_MODEL = os.getenv('FALLBACK_MODEL', 'gpt-4.1-nano')
 EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'text-embedding-3-small')
 
-# Parámetros de generación
-TEMPERATURE = float(os.getenv('TEMPERATURE', 0.7))
-TOP_P = float(os.getenv('TOP_P', 0.9))
-TOP_K = int(os.getenv('TOP_K', 50))
-MAX_OUTPUT_TOKENS = int(os.getenv('MAX_OUTPUT_TOKENS', 300))
+# Parámetros de generación (para embeddings)
 API_TIMEOUT = int(os.getenv('API_TIMEOUT', 30))
 
 # =============================================================================
-# CONFIGURACIÓN DE RAG
+# CONFIGURACIÓN DE PROCESAMIENTO DE DOCUMENTOS
 # =============================================================================
-
-# Parámetros de RAG
-RAG_NUM_CHUNKS = int(os.getenv('RAG_NUM_CHUNKS', 3))
-SIMILARITY_THRESHOLD = float(os.getenv('SIMILARITY_THRESHOLD', 0.3))
 
 # Configuración de chunking
 CHUNK_SIZE = int(os.getenv('CHUNK_SIZE', 250))
@@ -194,18 +185,10 @@ CONFIG = {
     },
     'openai': {
         'api_key': OPENAI_API_KEY,
-        'primary_model': PRIMARY_MODEL,
-        'fallback_model': FALLBACK_MODEL,
         'embedding_model': EMBEDDING_MODEL,
-        'temperature': TEMPERATURE,
-        'top_p': TOP_P,
-        'top_k': TOP_K,
-        'max_output_tokens': MAX_OUTPUT_TOKENS,
         'api_timeout': API_TIMEOUT,
     },
     'rag': {
-        'num_chunks': RAG_NUM_CHUNKS,
-        'similarity_threshold': SIMILARITY_THRESHOLD,
         'chunk_size': CHUNK_SIZE,
         'chunk_overlap': CHUNK_OVERLAP,
     },

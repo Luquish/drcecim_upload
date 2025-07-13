@@ -25,33 +25,12 @@ numpy>=1.24.0
 python-dotenv>=1.0.0
 tqdm>=4.65.0
 
-# Web framework (ya incluido en Functions Framework pero especificamos versión)
+# Web framework
 flask>=2.0.0
-
-# Manejo de archivos
 werkzeug>=2.0.0
 
 # =============================================================================
-# DEPENDENCIAS DE SISTEMA (para Cloud Functions)
-# =============================================================================
-
-# Logging mejorado
-logging>=0.4.9.6
-
-# Manejo de tiempo y fechas
-datetime
-
-# Manejo de archivos temporales
-tempfile
-
-# Manejo de paths
-pathlib
-
-# JSON para respuestas
-json5>=0.9.0
-
-# =============================================================================
-# DEPENDENCIAS OPCIONALES
+# DEPENDENCIAS OPCIONALES PARA DESARROLLO
 # =============================================================================
 
 # Para procesamiento de texto adicional (si es necesario)
