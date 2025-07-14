@@ -25,9 +25,6 @@ try:
     from services.gcs_service import GCSService
     from services.status_service import StatusService, DocumentStatus
     from utils.monitoring import get_logger, get_processing_monitor, log_system_info
-    from config.settings import (
-        GCS_BUCKET_NAME, TEMP_DIR, GCS_PROCESSED_PREFIX
-    )
 except ImportError as e:
     logger.error(f"Error al importar módulos: {str(e)}")
     raise
