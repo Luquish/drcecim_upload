@@ -22,3 +22,6 @@ tqdm>=4.65.0
 # Web framework
 flask>=2.0.0
 werkzeug>=2.0.0 
+
+# Paquete local compartido
+-e ../..

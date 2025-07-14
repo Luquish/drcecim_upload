@@ -21,11 +21,7 @@ import faiss
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Importar nuestros servicios desde la raíz del repositorio
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-
+# Importar nuestros servicios (ahora como paquete instalado)
 try:
     from services.embeddings_service import EmbeddingService
     from services.gcs_service import GCSService
@@ -114,6 +110,76 @@ def load_existing_faiss_index(gcs_service: GCSService) -> tuple:
     except Exception as e:
         app_logger.error(f"Error al cargar índice existente: {str(e)}")
         return None, pd.DataFrame(), False
+
+
+def remove_old_document_chunks(existing_index, existing_metadata: pd.DataFrame, 
+                              document_id: str) -> tuple:
+    """
+    Elimina chunks viejos de un documento específico del índice FAISS y metadatos.
+    
+    Args:
+        existing_index: Índice FAISS existente
+        existing_metadata (pd.DataFrame): Metadatos existentes
+        document_id (str): ID del documento cuyos chunks viejos se eliminarán
+        
+    Returns:
+        tuple: (updated_index, updated_metadata_df, removed_indices)
+    """
+    try:
+        if existing_index is None or existing_metadata.empty:
+            app_logger.info("No hay índice existente o metadatos para limpiar")
+            return existing_index, existing_metadata, []
+        
+        # Verificar si existe la columna document_id
+        if 'document_id' not in existing_metadata.columns:
+            app_logger.warning("Columna 'document_id' no encontrada en metadatos existentes. "
+                             "Usando 'filename' como fallback.")
+            # Crear document_id temporal basado en filename
+            existing_metadata['document_id'] = existing_metadata['filename'].apply(
+                lambda x: x.replace('.pdf', '') if x.endswith('.pdf') else x
+            )
+        
+        # Encontrar índices de los chunks del documento a eliminar
+        chunks_to_remove = existing_metadata[
+            existing_metadata['document_id'] == document_id
+        ].index.tolist()
+        
+        if not chunks_to_remove:
+            app_logger.info(f"No se encontraron chunks existentes para el documento: {document_id}")
+            return existing_index, existing_metadata, []
+        
+        app_logger.info(f"Eliminando {len(chunks_to_remove)} chunks viejos del documento: {document_id}")
+        
+        # Eliminar del índice FAISS
+        # Nota: FAISS no tiene remove_ids nativo, necesitamos reconstruir el índice
+        remaining_indices = [i for i in range(len(existing_metadata)) if i not in chunks_to_remove]
+        
+        if not remaining_indices:
+            # Si no quedan chunks, retornar índice vacío
+            app_logger.info("Todos los chunks han sido eliminados")
+            return None, pd.DataFrame(), chunks_to_remove
+        
+        # Reconstruir índice con los vectores restantes
+        dimension = existing_index.d
+        new_index = faiss.IndexFlatIP(dimension)
+        
+        # Extraer vectores que queremos mantener
+        all_vectors = existing_index.reconstruct_n(0, existing_index.ntotal)
+        remaining_vectors = all_vectors[remaining_indices]
+        
+        # Añadir vectores restantes al nuevo índice
+        new_index.add(remaining_vectors)
+        
+        # Actualizar metadatos eliminando las filas correspondientes
+        updated_metadata = existing_metadata.drop(chunks_to_remove).reset_index(drop=True)
+        
+        app_logger.info(f"Índice reconstruido. Vectores restantes: {new_index.ntotal}")
+        return new_index, updated_metadata, chunks_to_remove
+        
+    except Exception as e:
+        app_logger.error(f"Error al eliminar chunks viejos: {str(e)}")
+        # En caso de error, retornar el índice original
+        return existing_index, existing_metadata, []
 
 
 def update_faiss_index(existing_index, existing_metadata: pd.DataFrame, 
@@ -278,6 +344,20 @@ def create_embeddings_from_chunks(cloud_event):
                 'index_exists': index_exists,
                 'existing_vectors': existing_index.ntotal if existing_index else 0
             })
+            
+            # Eliminar chunks viejos del mismo documento si existen
+            document_id = embeddings_result.get('config', {}).get('filename', '').replace('.pdf', '')
+            if document_id and existing_index is not None:
+                app_logger.info(f"Eliminando chunks viejos del documento: {document_id}", {'session_id': session_id})
+                existing_index, existing_metadata, removed_chunks = remove_old_document_chunks(
+                    existing_index, existing_metadata, document_id
+                )
+                
+                processing_monitor.log_step(session_id, "old_chunks_removed", {
+                    'document_id': document_id,
+                    'removed_chunks_count': len(removed_chunks),
+                    'remaining_vectors': existing_index.ntotal if existing_index else 0
+                })
             
             # Actualizar índice FAISS
             app_logger.info("Actualizando índice FAISS", {'session_id': session_id})

@@ -19,11 +19,7 @@ from google.cloud import storage
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Importar nuestros servicios desde la raíz del repositorio
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
-
+# Importar nuestros servicios (ahora como paquete instalado)
 try:
     from services.processing_service import DocumentProcessor
     from services.gcs_service import GCSService

@@ -192,8 +192,26 @@ class EmbeddingService:
         Returns:
             pd.DataFrame: DataFrame con metadatos
         """
+        import uuid
+        from pathlib import Path
+        
+        # Crear IDs únicos para documento y chunks
+        document_ids = []
+        chunk_ids = []
+        
+        for filename in filenames:
+            # Crear document_id basado en el nombre del archivo (sin extensión)
+            document_id = Path(filename).stem
+            document_ids.append(document_id)
+            
+            # Crear chunk_id único combinando document_id y chunk_index
+            chunk_id = f"{document_id}_{chunk_indices[len(chunk_ids)]}"
+            chunk_ids.append(chunk_id)
+        
         # Crear DataFrame con información adicional
         metadata = pd.DataFrame({
+            'document_id': document_ids,
+            'chunk_id': chunk_ids,
             'text': texts,
             'filename': filenames,
             'chunk_index': chunk_indices,
