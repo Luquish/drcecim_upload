@@ -2,8 +2,6 @@
 Aplicación Streamlit para cargar y procesar documentos PDF usando DrCecim.
 """
 import streamlit as st
-import requests
-import json
 import time
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -88,39 +86,45 @@ def validate_file(uploaded_file) -> Dict[str, Any]:
     
     return {'valid': True}
 
-def call_cloud_function(file_data: bytes, filename: str) -> Dict[str, Any]:
-    """Llama a la Cloud Function para procesar el archivo."""
-    if not CLOUD_FUNCTION_URL:
-        return {'success': False, 'error': 'URL de Cloud Function no configurada'}
-    
+def upload_file_to_gcs(file_data: bytes, filename: str) -> Dict[str, Any]:
+    """Sube el archivo directamente a Google Cloud Storage."""
     try:
-        files = {'file': (filename, file_data, 'application/pdf')}
+        # Importar servicio GCS
+        from services.gcs_service import GCSService
         
-        response = requests.post(
-            CLOUD_FUNCTION_URL,
-            files=files,
-            timeout=600  # 10 minutos timeout
-        )
+        # Inicializar servicio GCS
+        gcs_service = GCSService()
         
-        if response.status_code == 200:
-            return response.json()
-        else:
-            error_msg = f"Error HTTP {response.status_code}"
-            try:
-                error_data = response.json()
-                if 'error' in error_data:
-                    error_msg = error_data['error']
-            except:
-                error_msg = response.text
+        # Crear archivo temporal
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+            tmp_file.write(file_data)
+            tmp_file_path = tmp_file.name
+        
+        try:
+            # Subir archivo al bucket (esto activará automáticamente el pipeline)
+            gcs_path = filename  # Subir directamente al root del bucket
+            success = gcs_service.upload_file(tmp_file_path, gcs_path)
             
-            return {'success': False, 'error': error_msg}
+            if success:
+                return {
+                    'success': True, 
+                    'filename': filename,
+                    'gcs_path': gcs_path,
+                    'message': 'Archivo subido exitosamente. El procesamiento comenzará automáticamente.'
+                }
+            else:
+                return {'success': False, 'error': 'Error al subir archivo a Google Cloud Storage'}
+                
+        finally:
+            # Limpiar archivo temporal
+            if os.path.exists(tmp_file_path):
+                os.remove(tmp_file_path)
     
-    except requests.exceptions.Timeout:
-        return {'success': False, 'error': 'Timeout: El procesamiento tomó demasiado tiempo'}
-    except requests.exceptions.ConnectionError:
-        return {'success': False, 'error': 'Error de conexión: No se pudo conectar con el servidor'}
     except Exception as e:
-        return {'success': False, 'error': f'Error inesperado: {str(e)}'}
+        return {'success': False, 'error': f'Error al subir archivo: {str(e)}'}
 
 def add_to_history(filename: str, result: Dict[str, Any]):
     """Agrega un resultado al historial de procesamiento."""
@@ -162,22 +166,22 @@ def render_file_uploader():
     # Instrucciones
     with st.expander("📋 Instrucciones", expanded=False):
         st.markdown("""
-        **Pasos para procesar un documento:**
+        **Pasos para cargar un documento:**
         
         1. **Selecciona un archivo PDF** usando el botón de abajo
         2. **Verifica** que el archivo sea válido (tamaño y tipo)
-        3. **Haz clic en "Procesar Documento"** para iniciar el procesamiento
-        4. **Espera** mientras el sistema:
-           - Convierte el PDF a Markdown
-           - Genera chunks de texto
-           - Crea embeddings con OpenAI
-           - Sube los datos a Google Cloud Storage
-        5. **Revisa los resultados** en la sección de resultados
+        3. **Haz clic en "Subir Documento"** para enviarlo al sistema
+        4. **El procesamiento comenzará automáticamente** en segundo plano:
+           - Conversión del PDF a chunks de texto
+           - Generación de embeddings con OpenAI
+           - Actualización del índice FAISS
+        5. **El documento aparecerá en el sistema** en unos minutos
         
         **Notas importantes:**
-        - El procesamiento puede tomar varios minutos dependiendo del tamaño del documento
+        - El procesamiento es completamente asíncrono - no necesitas esperar
         - Los documentos se procesan usando OpenAI para generar embeddings
         - Los resultados se almacenan en Google Cloud Storage para uso del chatbot
+        - El sistema usa una arquitectura orientada a eventos para mayor robustez
         """)
     
     # Subir archivo
@@ -213,10 +217,10 @@ def render_processing_button(uploaded_file):
         st.warning("⚠️ Primero selecciona un archivo PDF")
         return False
     
-    # Botón de procesamiento
+    # Botón de carga
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("🚀 Procesar Documento", type="primary", use_container_width=True):
+        if st.button("📤 Subir Documento", type="primary", use_container_width=True):
             return True
     
     return False
@@ -224,22 +228,11 @@ def render_processing_button(uploaded_file):
 def render_processing_status():
     """Renderiza el estado del procesamiento actual."""
     if st.session_state.current_processing:
-        st.subheader("⏳ Procesando...")
+        st.subheader("📤 Subiendo archivo...")
         
-        # Barra de progreso indeterminada
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # Simular progreso
-        for i in range(100):
-            progress_bar.progress(i + 1)
-            if i < 30:
-                status_text.text("🔄 Convirtiendo PDF a Markdown...")
-            elif i < 70:
-                status_text.text("🤖 Generando embeddings con OpenAI...")
-            else:
-                status_text.text("☁️ Subiendo datos a Google Cloud Storage...")
-            time.sleep(0.1)
+        # Spinner simple
+        with st.spinner("Subiendo archivo a Google Cloud Storage..."):
+            time.sleep(1)  # Breve pausa para mostrar el spinner
         
         return True
     
@@ -247,46 +240,48 @@ def render_processing_status():
 
 def render_results(result: Dict[str, Any]):
     """Renderiza los resultados del procesamiento."""
-    st.subheader("📊 Resultados del Procesamiento")
+    st.subheader("📊 Resultado de la Carga")
     
     if result.get('success', False):
-        st.success("✅ Documento procesado exitosamente")
+        st.success("✅ ¡Éxito! Archivo subido correctamente")
         
-        # Información del archivo procesado
-        col1, col2 = st.columns(2)
+        # Información del archivo subido
+        st.info(f"📄 **Archivo:** {result.get('filename', 'N/A')}")
+        st.info(f"💬 **Mensaje:** {result.get('message', 'N/A')}")
         
-        with col1:
-            st.subheader("📄 Información del Documento")
-            st.write(f"**Archivo:** {result.get('filename', 'N/A')}")
-            st.write(f"**Mensaje:** {result.get('message', 'N/A')}")
-            
-        with col2:
-            st.subheader("📈 Estadísticas")
-            stats = result.get('stats', {})
-            st.metric("Chunks generados", stats.get('num_chunks', 0))
-            st.metric("Palabras totales", stats.get('total_words', 0))
-            st.metric("Dimensión embeddings", stats.get('embedding_dimension', 0))
-            st.metric("Vectores creados", stats.get('num_vectors', 0))
+        # Información sobre el procesamiento automático
+        st.markdown("### 🔄 ¿Qué sigue?")
+        st.write("El archivo se está procesando automáticamente en segundo plano:")
+        st.write("1. ✅ **Paso 1**: Conversión de PDF a chunks de texto")
+        st.write("2. ⏳ **Paso 2**: Generación de embeddings con OpenAI")
+        st.write("3. ⏳ **Paso 3**: Actualización del índice FAISS")
+        st.write("")
+        st.write("📋 **El documento aparecerá en el sistema en unos minutos.**")
         
         # Archivos en GCS
-        gcs_files = result.get('gcs_files', {})
-        if gcs_files:
-            st.subheader("☁️ Archivos en Google Cloud Storage")
-            for file_type, file_url in gcs_files.items():
-                st.write(f"**{file_type.title()}:** `{file_url}`")
+        gcs_path = result.get('gcs_path')
+        if gcs_path:
+            st.write(f"📁 **Ubicación:** `{gcs_path}`")
     
     else:
-        st.error("❌ Error en el procesamiento")
+        st.error("❌ Error al subir archivo")
         error_msg = result.get('error', 'Error desconocido')
-        st.error(f"**Error:** {error_msg}")
+        st.write(f"**Error:** {error_msg}")
+        
+        # Sugerencias de solución
+        st.subheader("💡 Sugerencias")
+        st.write("- Verifica que el archivo PDF no esté dañado")
+        st.write("- Asegúrate de que el archivo tenga contenido de texto")
+        st.write("- Intenta con un archivo más pequeño")
+        st.write("- Verifica la configuración de Google Cloud Storage")
 
 def render_history():
-    """Renderiza el historial de procesamiento."""
+    """Renderiza el historial de carga de documentos."""
     if not st.session_state.processing_history:
-        st.info("📝 No hay historial de procesamiento")
+        st.info("📝 No hay historial de cargas")
         return
     
-    st.subheader("📚 Historial de Procesamiento")
+    st.subheader("📚 Historial de Cargas")
     
     for i, item in enumerate(st.session_state.processing_history):
         with st.expander(f"📄 {item['filename']} - {item['timestamp']}", expanded=i==0):
@@ -349,10 +344,10 @@ def main():
         
         # Mostrar estado de procesamiento
         if render_processing_status():
-            # Procesar archivo
+            # Subir archivo a GCS
             try:
                 file_data = uploaded_file.read()
-                result = call_cloud_function(file_data, uploaded_file.name)
+                result = upload_file_to_gcs(file_data, uploaded_file.name)
                 
                 # Agregar al historial
                 add_to_history(uploaded_file.name, result)
