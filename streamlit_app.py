@@ -10,9 +10,12 @@ from pathlib import Path
 import os
 from datetime import datetime
 import tempfile
+import pandas as pd
 
-# Importar servicio GCS
+# Importar servicios
 from services.gcs_service import GCSService
+from services.status_service import StatusService, DocumentStatus
+from services.file_validator import pdf_validator
 
 # Configurar la página
 st.set_page_config(
@@ -64,7 +67,7 @@ def format_file_size(size_bytes: int) -> str:
     return f"{s} {size_names[i]}"
 
 def validate_file(uploaded_file) -> Dict[str, Any]:
-    """Valida que el archivo sea válido para procesamiento."""
+    """Valida que el archivo sea válido para procesamiento con validaciones de seguridad."""
     if not uploaded_file:
         return {'valid': False, 'error': 'No se seleccionó ningún archivo'}
     
@@ -84,7 +87,35 @@ def validate_file(uploaded_file) -> Dict[str, Any]:
             'error': f'El archivo excede el tamaño máximo de {MAX_FILE_SIZE_MB}MB'
         }
     
-    return {'valid': True}
+    # Validaciones avanzadas de seguridad
+    try:
+        # Leer el archivo para validación de seguridad
+        file_data = uploaded_file.read()
+        uploaded_file.seek(0)  # Resetear posición del archivo
+        
+        # Realizar validación de seguridad completa
+        security_validation = pdf_validator.validate_file(file_data=file_data)
+        
+        if not security_validation['valid']:
+            return {
+                'valid': False,
+                'error': f'Archivo falló validaciones de seguridad: {security_validation["error"]}',
+                'security_details': security_validation['checks']
+            }
+        
+        return {
+            'valid': True,
+            'size': uploaded_file.size,
+            'name': uploaded_file.name,
+            'security_validation': security_validation,
+            'file_info': security_validation.get('file_info', {})
+        }
+        
+    except Exception as e:
+        return {
+            'valid': False,
+            'error': f'Error durante validación de seguridad: {str(e)}'
+        }
 
 def upload_file_to_bucket(file_data: bytes, filename: str) -> Dict[str, Any]:
     """Sube el archivo directamente al bucket de GCS para procesamiento asíncrono."""
@@ -136,6 +167,182 @@ def add_to_history(filename: str, result: Dict[str, Any]):
     # Mantener solo los últimos 10 items
     if len(st.session_state.processing_history) > 10:
         st.session_state.processing_history = st.session_state.processing_history[:10]
+
+
+def get_status_color(status: str) -> str:
+    """Retorna el color para mostrar el estado."""
+    colors = {
+        "uploaded": "🟡",
+        "processing": "🔄",
+        "completed": "✅",
+        "error": "❌",
+        "cancelled": "⏹️"
+    }
+    return colors.get(status, "❓")
+
+
+def format_datetime(dt_string: str) -> str:
+    """Formatea una fecha ISO a formato legible."""
+    try:
+        dt = datetime.fromisoformat(dt_string.replace('Z', '+00:00'))
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except:
+        return dt_string
+
+
+def render_document_status():
+    """Renderiza la sección de estado de documentos."""
+    st.header("📊 Estado de Documentos")
+    
+    try:
+        status_service = StatusService()
+        
+        # Pestañas para diferentes vistas
+        tab1, tab2 = st.tabs(["📋 Mis Documentos", "🔍 Buscar por ID"])
+        
+        with tab1:
+            st.subheader("Documentos Procesados")
+            
+            # Botón para refrescar
+            if st.button("🔄 Refrescar Estado", key="refresh_status"):
+                st.rerun()
+            
+            # Obtener documentos del usuario
+            documents = status_service.get_user_documents("default")
+            
+            if not documents:
+                st.info("No hay documentos procesados aún.")
+                return
+            
+            # Mostrar documentos en una tabla
+            for i, doc in enumerate(documents):
+                with st.expander(
+                    f"{get_status_color(doc.get('status', 'unknown'))} "
+                    f"{doc.get('filename', 'Sin nombre')} - "
+                    f"{doc.get('status', 'unknown').title()}", 
+                    expanded=(i == 0)
+                ):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**Información General:**")
+                        st.write(f"📄 **Archivo:** {doc.get('filename', 'N/A')}")
+                        st.write(f"🆔 **ID:** {doc.get('document_id', 'N/A')}")
+                        st.write(f"📅 **Subido:** {format_datetime(doc.get('created_at', ''))}")
+                        st.write(f"🔄 **Actualizado:** {format_datetime(doc.get('updated_at', ''))}")
+                    
+                    with col2:
+                        st.write("**Estado Actual:**")
+                        status = doc.get('status', 'unknown')
+                        st.write(f"🔘 **Estado:** {get_status_color(status)} {status.title()}")
+                        
+                        metadata = doc.get('metadata', {})
+                        if metadata.get('total_chunks'):
+                            st.write(f"📝 **Chunks:** {metadata.get('total_chunks', 0)}")
+                        if metadata.get('processing_time'):
+                            st.write(f"⏱️ **Tiempo:** {metadata.get('processing_time', 0):.2f}s")
+                    
+                    # Mostrar historial de pasos
+                    steps = doc.get('steps', [])
+                    if steps:
+                        st.write("**Historial de Procesamiento:**")
+                        for step in reversed(steps[-5:]):  # Últimos 5 pasos
+                            step_time = format_datetime(step.get('timestamp', ''))
+                            step_name = step.get('step', 'N/A')
+                            step_message = step.get('message', '')
+                            step_status = step.get('status', 'unknown')
+                            
+                            st.write(
+                                f"• `{step_time}` - **{step_name}** "
+                                f"{get_status_color(step_status)} {step_message}"
+                            )
+        
+        with tab2:
+            st.subheader("Buscar Documento por ID")
+            
+            document_id = st.text_input(
+                "ID del Documento:", 
+                placeholder="default_1234567890_documento.pdf"
+            )
+            
+            if st.button("🔍 Buscar", key="search_document") and document_id:
+                doc = status_service.get_document_status(document_id)
+                
+                if doc:
+                    st.success("Documento encontrado:")
+                    
+                    # Mostrar información detallada
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.json({
+                            "filename": doc.get('filename'),
+                            "status": doc.get('status'),
+                            "created_at": doc.get('created_at'),
+                            "updated_at": doc.get('updated_at')
+                        })
+                    
+                    with col2:
+                        st.json(doc.get('metadata', {}))
+                    
+                    # Mostrar todos los pasos
+                    if doc.get('steps'):
+                        st.write("**Historial Completo:**")
+                        steps_df = pd.DataFrame(doc.get('steps', []))
+                        if not steps_df.empty:
+                            st.dataframe(steps_df, use_container_width=True)
+                
+                else:
+                    st.error("Documento no encontrado.")
+    
+    except Exception as e:
+        st.error(f"Error al cargar el estado de documentos: {str(e)}")
+
+
+def render_processing_statistics():
+    """Renderiza estadísticas de procesamiento."""
+    st.header("📈 Estadísticas de Procesamiento")
+    
+    try:
+        status_service = StatusService()
+        documents = status_service.get_all_documents(limit=100)
+        
+        if not documents:
+            st.info("No hay documentos para mostrar estadísticas.")
+            return
+        
+        # Crear DataFrame para análisis
+        df_data = []
+        for doc in documents:
+            df_data.append({
+                'filename': doc.get('filename', ''),
+                'status': doc.get('status', ''),
+                'created_at': doc.get('created_at', ''),
+                'chunks': doc.get('metadata', {}).get('total_chunks', 0)
+            })
+        
+        df = pd.DataFrame(df_data)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Documentos", len(documents))
+        
+        with col2:
+            completed = len(df[df['status'] == 'completed'])
+            st.metric("Completados", completed)
+        
+        with col3:
+            errors = len(df[df['status'] == 'error'])
+            st.metric("Con Error", errors)
+        
+        # Gráfico de estados
+        if not df.empty:
+            status_counts = df['status'].value_counts()
+            st.bar_chart(status_counts)
+    
+    except Exception as e:
+        st.error(f"Error al cargar estadísticas: {str(e)}")
 
 # =============================================================================
 # COMPONENTES DE LA INTERFAZ
@@ -236,14 +443,35 @@ def render_processing_button(uploaded_file):
                 
                 # Mostrar resultado
                 if result['success']:
-                    st.success(f"✅ ¡Éxito! El archivo **{uploaded_file.name}** ha sido enviado para procesamiento.")
-                    st.info("📋 **Información importante:**")
-                    st.markdown("""
-                    - El archivo aparecerá en el sistema en **unos minutos**
-                    - El procesamiento es completamente **asíncrono**
-                    - No necesitas esperar en esta pantalla
-                    - Puedes cerrar el navegador y volver después
-                    """)
+                    # Registrar documento en el sistema de estado
+                    try:
+                        status_service = StatusService()
+                        document_id = status_service.register_document(uploaded_file.name)
+                        
+                        st.success(f"✅ ¡Éxito! El archivo **{uploaded_file.name}** ha sido enviado para procesamiento.")
+                        st.info(f"🆔 **ID del documento:** `{document_id}`")
+                        st.info("📋 **Información importante:**")
+                        st.markdown("""
+                        - El archivo aparecerá en el sistema en **unos minutos**
+                        - El procesamiento es completamente **asíncrono**
+                        - No necesitas esperar en esta pantalla
+                        - Puedes consultar el estado en la pestaña "Estado de Documentos"
+                        - Puedes cerrar el navegador y volver después
+                        """)
+                        
+                        # Mostrar enlace directo al estado
+                        st.markdown(f"💡 **Consejo:** Copia este ID para consultar el estado: `{document_id}`")
+                        
+                    except Exception as e:
+                        st.success(f"✅ ¡Éxito! El archivo **{uploaded_file.name}** ha sido enviado para procesamiento.")
+                        st.warning(f"⚠️ No se pudo registrar en el sistema de estado: {str(e)}")
+                        st.info("📋 **Información importante:**")
+                        st.markdown("""
+                        - El archivo aparecerá en el sistema en **unos minutos**
+                        - El procesamiento es completamente **asíncrono**
+                        - No necesitas esperar en esta pantalla
+                        - Puedes cerrar el navegador y volver después
+                        """)
                 else:
                     st.error(f"❌ Error al subir el archivo: {result.get('error', 'Error desconocido')}")
                     
@@ -322,15 +550,27 @@ def main():
     render_header()
     render_sidebar()
     
-    # Área principal
-    uploaded_file = render_file_uploader()
+    # Crear pestañas para organizar la interfaz
+    tab1, tab2, tab3 = st.tabs(["📤 Subir Archivos", "📊 Estado de Documentos", "📈 Estadísticas"])
     
-    # Botón de procesamiento (ahora maneja toda la lógica internamente)
-    render_processing_button(uploaded_file)
+    with tab1:
+        # Área principal de subida
+        uploaded_file = render_file_uploader()
+        
+        # Botón de procesamiento (ahora maneja toda la lógica internamente)
+        render_processing_button(uploaded_file)
+        
+        # Historial
+        st.divider()
+        render_history()
     
-    # Historial
-    st.divider()
-    render_history()
+    with tab2:
+        # Estado de documentos
+        render_document_status()
+    
+    with tab3:
+        # Estadísticas de procesamiento
+        render_processing_statistics()
 
 if __name__ == "__main__":
     main() 

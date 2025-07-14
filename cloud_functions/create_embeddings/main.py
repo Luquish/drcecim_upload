@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 try:
     from services.embeddings_service import EmbeddingService
     from services.gcs_service import GCSService
+    from services.status_service import StatusService, DocumentStatus
     from utils.monitoring import get_logger, get_processing_monitor, log_system_info
     from config.settings import (
         GCS_BUCKET_NAME, TEMP_DIR, GCS_PROCESSED_PREFIX,
@@ -304,6 +305,10 @@ def create_embeddings_from_chunks(cloud_event):
         session_id = processing_monitor.start_processing(file_name)
         app_logger.info(f"Iniciando generación de embeddings: {file_name}", {'session_id': session_id})
         
+        # Inicializar servicio de estado
+        status_service = StatusService()
+        document_id = None
+        
         try:
             # Inicializar servicios
             gcs_service = GCSService(bucket_name=bucket_name)
@@ -318,6 +323,25 @@ def create_embeddings_from_chunks(cloud_event):
                 'num_chunks': chunks_data.get('num_chunks', 0)
             })
             
+            # Buscar el document_id correspondiente basado en el nombre del archivo
+            original_filename = chunks_data.get('filename', '')
+            if original_filename:
+                # Buscar documentos que coincidan con el nombre del archivo
+                all_docs = status_service.get_all_documents(limit=50)
+                for doc in all_docs:
+                    if doc.get('filename') == original_filename:
+                        document_id = doc.get('document_id')
+                        break
+                
+                # Actualizar estado para indicar inicio de generación de embeddings
+                if document_id:
+                    status_service.update_status(
+                        document_id, 
+                        DocumentStatus.PROCESSING, 
+                        f"Iniciando generación de embeddings para {chunks_data.get('num_chunks', 0)} chunks",
+                        "embeddings_generation_start"
+                    )
+            
             # Generar embeddings para los chunks
             app_logger.info("Generando embeddings", {'session_id': session_id})
             processing_monitor.log_step(session_id, "embeddings_generation_started")
@@ -329,12 +353,31 @@ def create_embeddings_from_chunks(cloud_event):
                 error_msg = embeddings_result.get('error', 'Error en generación de embeddings')
                 app_logger.error(error_msg, {'session_id': session_id})
                 processing_monitor.finish_processing(session_id, success=False, error_message=error_msg)
+                if document_id:
+                    status_service.update_status(
+                        document_id, 
+                        DocumentStatus.ERROR, 
+                        f"Error en generación de embeddings: {error_msg}",
+                        "embeddings_error"
+                    )
                 return
             
             processing_monitor.log_step(session_id, "embeddings_generation_completed", {
                 'embedding_dimension': embeddings_result.get('config', {}).get('dimension', 0),
                 'num_vectors': embeddings_result.get('config', {}).get('num_vectors', 0)
             })
+            
+            if document_id:
+                status_service.update_status(
+                    document_id, 
+                    DocumentStatus.PROCESSING, 
+                    f"Embeddings generados exitosamente. Actualizando índice FAISS",
+                    "embeddings_generated",
+                    metadata={
+                        'embedding_dimension': embeddings_result.get('config', {}).get('dimension', 0),
+                        'num_vectors': embeddings_result.get('config', {}).get('num_vectors', 0)
+                    }
+                )
             
             # Cargar índice FAISS existente
             app_logger.info("Cargando índice FAISS existente", {'session_id': session_id})
@@ -380,6 +423,18 @@ def create_embeddings_from_chunks(cloud_event):
             processing_monitor.log_step(session_id, "index_saved", {'uploaded_files': uploaded_files})
             processing_monitor.finish_processing(session_id, success=True)
             
+            if document_id:
+                status_service.update_status(
+                    document_id, 
+                    DocumentStatus.COMPLETED, 
+                    f"Procesamiento completo. Índice FAISS actualizado con {updated_index.ntotal} vectores totales",
+                    "embeddings_completed",
+                    metadata={
+                        'total_vectors': updated_index.ntotal,
+                        'uploaded_files': uploaded_files
+                    }
+                )
+            
             app_logger.info(
                 f"Embeddings procesados exitosamente. Índice actualizado: {updated_index.ntotal} vectores totales",
                 {'session_id': session_id}
@@ -389,6 +444,13 @@ def create_embeddings_from_chunks(cloud_event):
             error_msg = f"Error durante el procesamiento de embeddings: {str(e)}"
             app_logger.error(error_msg, {'session_id': session_id})
             processing_monitor.finish_processing(session_id, success=False, error_message=error_msg)
+            if document_id:
+                status_service.update_status(
+                    document_id, 
+                    DocumentStatus.ERROR, 
+                    error_msg,
+                    "embeddings_exception_error"
+                )
             raise
         
         finally:

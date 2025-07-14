@@ -1,224 +1,240 @@
 # Mejoras Implementadas - DrCecim Upload
 
-## Resumen
+Este documento describe las mejoras implementadas en el sistema DrCecim Upload según los requerimientos solicitados.
 
-Este documento resume todas las mejoras implementadas en el sistema DrCecim Upload basándose en las observaciones y recomendaciones proporcionadas.
+## 📊 1. Sistema de Notificación y Estado
 
-## ✅ 1. Limpieza de Variables de Entorno
+### ✅ Implementado
 
-### Problema Original
-Variables de entorno del chatbot principal (RAG) mezcladas con variables del sistema de procesamiento de documentos.
+**Nuevo servicio de seguimiento de estado:**
+- `services/status_service.py` - Servicio completo de gestión de estados
+- Estados: `uploaded`, `processing`, `completed`, `error`, `cancelled`
+- Almacenamiento en Google Cloud Storage con archivos JSON
+- Seguimiento detallado de pasos del procesamiento
 
-### Solución Implementada
-- ❌ **Removidas variables innecesarias**:
-  - `RAG_NUM_CHUNKS`
-  - `SIMILARITY_THRESHOLD` 
-  - `PRIMARY_MODEL`
-  - `FALLBACK_MODEL`
-  - `TEMPERATURE`, `TOP_P`, `TOP_K`, `MAX_OUTPUT_TOKENS`
+**Integración en Cloud Functions:**
+- Registro automático de documentos al subir archivos
+- Actualizaciones de estado en tiempo real durante el procesamiento
+- Manejo de errores con estados apropiados
 
-- ✅ **Variables mantenidas (necesarias)**:
-  - `OPENAI_API_KEY`
-  - `EMBEDDING_MODEL`
-  - `API_TIMEOUT`
-  - `CHUNK_SIZE`, `CHUNK_OVERLAP`
+**Interfaz de usuario mejorada:**
+- Nueva pestaña "Estado de Documentos" en Streamlit
+- Búsqueda por ID de documento
+- Historial completo de procesamiento
+- Estadísticas de documentos procesados
+- Actualización automática de estados
 
-### Archivos Modificados
-- `config/settings.py` - Configuración limpia
-- `.env.example` - Nuevo archivo con variables relevantes
+### 🚀 Cómo usar
 
-## ✅ 2. Optimización de GCS Credentials
+1. **Subir un archivo**: El sistema genera automáticamente un `document_id`
+2. **Consultar estado**: Usar la pestaña "Estado de Documentos" o buscar por ID
+3. **Ver progreso**: Seguir los pasos en tiempo real desde subida hasta completado
 
-### Problema Original
-Dependencia forzosa de `GCS_CREDENTIALS_PATH` que no es necesaria en producción.
+## 🧪 2. Pruebas Automatizadas
 
-### Solución Implementada
-- ✅ **GCS_CREDENTIALS_PATH ahora es opcional**
-- ✅ **Usa Application Default Credentials (ADC) en producción**
-- ✅ **Mejores mensajes de error explicativos**
-- ✅ **Documentación clara sobre cuándo usar cada método**
+### ✅ Implementado
 
-### Beneficios
-- 🔐 **Más seguro** en producción (usa cuenta de servicio asignada)
-- 🔧 **Más fácil de configurar** en Cloud Functions/Cloud Run
-- 📝 **Mejor documentación** para desarrolladores
+**Estructura completa de testing:**
+```
+tests/
+├── __init__.py
+├── test_status_service.py      # Pruebas del servicio de estado
+├── test_processing_service.py  # Pruebas del procesamiento de documentos
+├── test_embeddings_service.py  # Pruebas del servicio de embeddings
+└── test_integration.py         # Pruebas de integración completas
+```
 
-## ✅ 3. Nueva Arquitectura Orientada a Eventos
+**Configuración de pytest:**
+- `pytest.ini` - Configuración de testing
+- `run_tests.py` - Script ejecutor de pruebas
+- Coverage reports incluidos
 
-### Problema Original
-Función monolítica con riesgos de timeout y falta de escalabilidad.
+**Tipos de pruebas:**
+- **Unitarias**: Cada servicio individual con mocks apropiados
+- **Integración**: Flujo completo del sistema
+- **Seguridad**: Validación de archivos PDF
 
-### Solución Implementada
+### 🚀 Cómo ejecutar
 
-#### Función 1: `process-pdf-to-chunks`
-- 🔄 **Trigger**: Archivos PDF subidos al bucket
-- ⚡ **Responsabilidad**: Solo conversión PDF → Chunks
-- 📊 **Configuración**: 1GB RAM, 9 min timeout
-- 📁 **Salida**: Archivos JSON en prefijo `processed/`
+```bash
+# Todas las pruebas
+python run_tests.py
 
-#### Función 2: `create-embeddings-from-chunks`  
-- 🔄 **Trigger**: Archivos `*_chunks.json` en `processed/`
-- ⚡ **Responsabilidad**: Embeddings + Actualización incremental FAISS
-- 📊 **Configuración**: 2GB RAM, 15 min timeout
-- 📁 **Salida**: Índice FAISS actualizado en GCS
+# Solo pruebas unitarias
+python run_tests.py --unit
 
-### Ventajas Clave
-- 🛡️ **Tolerancia a fallos**: Si falla una etapa, la otra puede continuar
-- 📈 **Escalabilidad independiente**: Cada función escala según necesidad
-- ⏱️ **Sin timeouts**: Cada etapa tiene tiempo suficiente
-- 🔄 **Procesamiento asíncrono**: Usuario no espera completado
-- 📊 **Mejor monitoreo**: Métricas independientes por etapa
+# Solo pruebas de integración
+python run_tests.py --integration
 
-## ✅ 4. Limpieza de Dependencies
+# Con reporte de cobertura
+python run_tests.py --coverage
 
-### Problema Original
-`requirements.txt` incluía módulos estándar de Python y librerías no utilizadas.
+# Archivo específico
+python run_tests.py --file test_status_service.py
+```
 
-### Solución Implementada
-- ❌ **Removidas dependencias innecesarias**:
-  - `logging` (módulo estándar)
-  - `datetime` (módulo estándar)
-  - `tempfile` (módulo estándar)
-  - `pathlib` (módulo estándar)
-  - `json5` (no utilizado)
+## 🔒 3. Refuerzo de Seguridad
 
-- ✅ **Mantenidas dependencias esenciales**:
-  - `functions-framework`
-  - `google-cloud-storage`
-  - `openai`
-  - `marker-pdf`
-  - `faiss-cpu`
-  - `pandas`, `numpy`
+### ✅ Implementado
 
-### Beneficios
-- ⚡ **Despliegues más rápidos**
-- 💾 **Menor tamaño de función**
-- 🔧 **Menos conflictos de dependencias**
+#### Google Secret Manager
+**Nuevo servicio de gestión de secretos:**
+- `services/secrets_service.py` - Gestión completa de secretos
+- `SecureConfigManager` - Prioriza Secret Manager sobre variables de entorno
+- Migración automática de variables críticas
 
-## ✅ 5. .gitignore Simplificado
+**Script de migración:**
+- `scripts/migrate_secrets.py` - Herramienta de migración
+- Migra automáticamente variables como `OPENAI_API_KEY`
+- Verificación y listado de secretos
 
-### Problema Original
-.gitignore genérico con muchas secciones irrelevantes (Django, Scrapy, etc.).
+#### Validación de Archivos PDF
+**Nuevo validador de seguridad:**
+- `services/file_validator.py` - Validador completo de PDFs
+- Verificaciones múltiples:
+  - Firmas de archivo válidas
+  - Detección de patrones sospechosos (JavaScript, scripts)
+  - Validación de estructura PDF
+  - Verificación de tipo MIME
+  - Comparación con hashes de malware conocido
 
-### Solución Implementada
-- 🎯 **Enfocado en el proyecto específico**:
-  - Python básico
-  - Google Cloud Platform
-  - Streamlit
-  - Archivos de procesamiento
-  - IDEs comunes
+### 🚀 Cómo configurar
 
-- ❌ **Removidas secciones irrelevantes**:
-  - Django stuff
-  - Scrapy stuff
-  - Flask stuff
-  - Y muchas más...
+#### Secret Manager:
+```bash
+# Migrar secretos existentes
+python scripts/migrate_secrets.py --project-id tu-proyecto
 
-## ✅ 6. Actualización Incremental de FAISS
+# Ver qué se migraría (sin cambios)
+python scripts/migrate_secrets.py --dry-run
 
-### Problema Original
-Cada documento creaba su propio índice FAISS sin combinar con el global.
+# Listar secretos actuales
+python scripts/migrate_secrets.py list
 
-### Solución Implementada
-- 📥 **Descarga índice existente** desde GCS
-- 🔄 **Combina nuevos vectores** con existentes  
-- 📊 **Actualiza metadatos** concatenando DataFrames
-- 📤 **Sube índice actualizado** de vuelta a GCS
+# Verificar migración
+python scripts/migrate_secrets.py verify
+```
 
-### Beneficios
-- 🎯 **Índice único global** para todas las búsquedas
-- ⚡ **No reconstruye todo** el índice
-- 💰 **Más económico** en recursos
-- 🔍 **Búsquedas más eficientes**
+#### Validación automática:
+- Se ejecuta automáticamente en cada subida de archivo
+- Rechaza archivos con contenido sospechoso
+- Proporciona detalles de validación en la interfaz
 
-## ✅ 7. Scripts de Despliegue Mejorados
+## 📦 Dependencias Agregadas
 
-### Nuevos Archivos
-- `cloud_functions/deploy_event_driven.sh` - Script automático
-- `docs/NUEVA_ARQUITECTURA.md` - Documentación completa
+```txt
+# Secret Manager
+google-cloud-secret-manager>=2.16.0
 
-### Características
-- 🎨 **Output coloreado** para mejor UX
-- ✅ **Validación de variables** de entorno
-- 🔧 **Configuración automática** de triggers
-- 📝 **Instrucciones claras** post-despliegue
+# Validación de archivos
+python-magic>=0.4.27
 
-## 📊 Impacto de las Mejoras
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.0
+coverage>=7.3.0
+```
 
-### Robustez
-- ✅ **Sistema tolerante a fallos**
-- ✅ **Mejor recuperación ante errores**
-- ✅ **Monitoreo granular**
+## 🔧 Configuración Requerida
 
-### Escalabilidad  
-- ✅ **Funciones independientes escalables**
-- ✅ **Sin limitaciones de timeout**
-- ✅ **Procesamiento paralelo posible**
+### 1. Variables de Entorno / Secretos
+```env
+# Proyecto de Google Cloud (requerido para Secret Manager)
+GCF_PROJECT_ID=tu-proyecto-id
 
-### Mantenibilidad
-- ✅ **Código más modular**
-- ✅ **Dependencias limpias**
-- ✅ **Documentación completa**
+# API Keys (migrar a Secret Manager)
+OPENAI_API_KEY=tu-api-key
 
-### Seguridad
-- ✅ **Mejores prácticas de autenticación**
-- ✅ **Sin archivos de credenciales en producción**
-- ✅ **Principio de menor privilegio**
+# Opcional: Credenciales GCS para desarrollo local
+GCS_CREDENTIALS_PATH=path/to/credentials.json
+```
 
-### Costos
-- ✅ **Recursos optimizados por función**
-- ✅ **Menos llamadas a API redundantes**
-- ✅ **Procesamiento más eficiente**
+### 2. Permisos de Google Cloud
+Asegúrate de que las Cloud Functions tengan estos permisos:
+- `secretmanager.versions.access` - Para leer secretos
+- `storage.objects.create` - Para crear archivos de estado
+- `storage.objects.get` - Para leer archivos de estado
 
-## 🚀 Próximos Pasos Recomendados
+### 3. Libmagic (para validación de archivos)
+```bash
+# Ubuntu/Debian
+sudo apt-get install libmagic1
 
-1. **Migración Gradual**
-   - Probar nueva arquitectura en desarrollo
-   - Migrar gradualmente de función legacy
-   - Monitorear rendimiento
+# macOS
+brew install libmagic
 
-2. **Optimizaciones Adicionales**
-   - Implementar retry logic
-   - Agregar notificaciones de completado
-   - Dashboard de monitoreo
+# CentOS/RHEL
+sudo yum install file-devel
+```
 
-3. **Documentación**
-   - Actualizar README principal
-   - Crear guías de troubleshooting
-   - Documentar mejores prácticas
+## 🎯 Beneficios Implementados
 
-## 📁 Archivos Creados/Modificados
+### Sistema de Estado
+- ✅ **Transparencia**: Los usuarios pueden ver exactamente dónde está su documento
+- ✅ **Debugging**: Errores específicos con información detallada
+- ✅ **Monitoreo**: Estadísticas de procesamiento y rendimiento
+- ✅ **Experiencia de usuario**: No más espera sin información
 
-### Archivos Nuevos
-- `.env.example`
-- `cloud_functions/process_pdf.py`
-- `cloud_functions/create_embeddings.py`
-- `cloud_functions/deploy_event_driven.sh`
-- `docs/NUEVA_ARQUITECTURA.md`
-- `MEJORAS_IMPLEMENTADAS.md`
+### Pruebas Automatizadas
+- ✅ **Calidad**: Detección temprana de regresiones
+- ✅ **Confiabilidad**: Validación de todos los componentes críticos
+- ✅ **Mantenimiento**: Facilita cambios seguros en el código
+- ✅ **Documentación**: Las pruebas documentan el comportamiento esperado
 
-### Archivos Modificados
-- `config/settings.py`
-- `services/gcs_service.py`
-- `cloud_functions/main.py` (marcado como legacy)
-- `cloud_functions/requirements.txt`
-- `.gitignore`
+### Seguridad Reforzada
+- ✅ **Gestión de secretos**: API keys y credenciales seguras
+- ✅ **Validación de archivos**: Prevención de archivos maliciosos
+- ✅ **Rotación de claves**: Facilita el cambio de API keys
+- ✅ **Cumplimiento**: Mejores prácticas de seguridad
 
-## ✅ Checklist de Verificación
+## 📝 Instrucciones de Despliegue
 
-- [x] Variables de entorno limpiadas
-- [x] GCS credentials hechas opcionales
-- [x] Arquitectura orientada a eventos implementada
-- [x] Dependencies limpiadas
-- [x] .gitignore simplificado
-- [x] Actualización incremental FAISS
-- [x] Scripts de despliegue creados
-- [x] Documentación completa
-- [x] Función legacy marcada
-- [x] Todos los cambios probados
+### 1. Preparar Secret Manager
+```bash
+# Habilitar la API
+gcloud services enable secretmanager.googleapis.com
 
-## 🎉 Conclusión
+# Migrar secretos
+python scripts/migrate_secrets.py --project-id tu-proyecto
+```
 
-Las mejoras implementadas transforman el sistema DrCecim Upload de una arquitectura monolítica a una solución robusta, escalable y mantenible que sigue las mejores prácticas de Cloud Functions y Google Cloud Platform.
+### 2. Actualizar Cloud Functions
+```bash
+# Asegurar permisos
+gcloud functions deploy process-pdf \
+  --set-env-vars="GCF_PROJECT_ID=tu-proyecto" \
+  --grant-secret-manager-access
 
-El sistema ahora está preparado para manejar cargas de trabajo variables, recuperarse de fallos de manera elegante, y escalar independientemente según las necesidades de cada etapa del procesamiento. 
+gcloud functions deploy create-embeddings \
+  --set-env-vars="GCF_PROJECT_ID=tu-proyecto" \
+  --grant-secret-manager-access
+```
+
+### 3. Ejecutar Pruebas
+```bash
+# Instalar dependencias de testing
+pip install -r requirements.txt
+
+# Ejecutar todas las pruebas
+python run_tests.py --coverage
+```
+
+### 4. Verificar Implementación
+```bash
+# Verificar Secret Manager
+python scripts/migrate_secrets.py verify
+
+# Probar subida de archivo en Streamlit
+streamlit run streamlit_app.py
+```
+
+## 🎉 Resumen
+
+Las tres mejoras solicitadas han sido **completamente implementadas**:
+
+1. ✅ **Sistema de Notificación y Estado** - Seguimiento completo en tiempo real
+2. ✅ **Pruebas Automatizadas** - Suite completa de tests unitarios e integración
+3. ✅ **Seguridad Reforzada** - Secret Manager + validación avanzada de PDFs
+
+El sistema ahora es más **robusto**, **seguro** y **fácil de mantener**, con una experiencia de usuario significativamente mejorada. 

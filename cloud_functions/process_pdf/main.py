@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 try:
     from services.processing_service import DocumentProcessor
     from services.gcs_service import GCSService
+    from services.status_service import StatusService, DocumentStatus
     from utils.monitoring import get_logger, get_processing_monitor, log_system_info
     from config.settings import (
         GCS_BUCKET_NAME, TEMP_DIR, GCS_PROCESSED_PREFIX
@@ -99,6 +100,16 @@ def process_pdf_to_chunks(cloud_event):
         session_id = processing_monitor.start_processing(file_name)
         app_logger.info(f"Iniciando procesamiento de PDF: {file_name}", {'session_id': session_id})
         
+        # Registrar documento en el servicio de estado
+        status_service = StatusService()
+        document_id = status_service.register_document(file_name)
+        status_service.update_status(
+            document_id, 
+            DocumentStatus.PROCESSING, 
+            "Iniciando procesamiento de PDF",
+            "pdf_processing_start"
+        )
+        
         # Crear directorio temporal
         temp_dir = tempfile.mkdtemp(prefix='drcecim_pdf_')
         temp_file_path = None
@@ -113,6 +124,12 @@ def process_pdf_to_chunks(cloud_event):
             gcs_service.download_file(file_name, temp_file_path)
             
             processing_monitor.log_step(session_id, "pdf_downloaded", {'temp_path': temp_file_path})
+            status_service.update_status(
+                document_id, 
+                DocumentStatus.PROCESSING, 
+                "PDF descargado, iniciando conversión a texto",
+                "pdf_downloaded"
+            )
             
             # Procesar PDF a chunks
             app_logger.info("Procesando PDF con DocumentProcessor", {'session_id': session_id})
@@ -125,12 +142,28 @@ def process_pdf_to_chunks(cloud_event):
                 error_msg = processed_doc.get('error', 'Error desconocido en el procesamiento')
                 app_logger.error(f"Error en procesamiento: {error_msg}", {'session_id': session_id})
                 processing_monitor.finish_processing(session_id, success=False, error_message=error_msg)
+                status_service.update_status(
+                    document_id, 
+                    DocumentStatus.ERROR, 
+                    f"Error en procesamiento: {error_msg}",
+                    "processing_error"
+                )
                 return
             
             processing_monitor.log_step(session_id, "pdf_processing_completed", {
                 'num_chunks': processed_doc.get('num_chunks', 0),
                 'total_words': processed_doc.get('total_words', 0)
             })
+            status_service.update_status(
+                document_id, 
+                DocumentStatus.PROCESSING, 
+                f"PDF convertido exitosamente. Generados {processed_doc.get('num_chunks', 0)} chunks",
+                "pdf_processing_completed",
+                metadata={
+                    'num_chunks': processed_doc.get('num_chunks', 0),
+                    'total_words': processed_doc.get('total_words', 0)
+                }
+            )
             
             # Preparar datos para subir al bucket intermedio
             chunks_data = {
@@ -162,6 +195,13 @@ def process_pdf_to_chunks(cloud_event):
                     'chunks_file': chunks_gcs_path
                 })
                 processing_monitor.finish_processing(session_id, success=True)
+                status_service.update_status(
+                    document_id, 
+                    DocumentStatus.COMPLETED, 
+                    f"Documento procesado exitosamente. Chunks guardados en: {chunks_gcs_path}",
+                    "processing_completed",
+                    metadata={'chunks_file': chunks_gcs_path}
+                )
                 app_logger.info(
                     f"PDF procesado exitosamente. Chunks guardados en: {chunks_gcs_path}",
                     {'session_id': session_id}
@@ -170,11 +210,24 @@ def process_pdf_to_chunks(cloud_event):
                 error_msg = "Error al subir chunks a GCS"
                 app_logger.error(error_msg, {'session_id': session_id})
                 processing_monitor.finish_processing(session_id, success=False, error_message=error_msg)
+                status_service.update_status(
+                    document_id, 
+                    DocumentStatus.ERROR, 
+                    error_msg,
+                    "upload_error"
+                )
             
         except Exception as e:
             error_msg = f"Error durante el procesamiento: {str(e)}"
             app_logger.error(error_msg, {'session_id': session_id})
             processing_monitor.finish_processing(session_id, success=False, error_message=error_msg)
+            if 'document_id' in locals():
+                status_service.update_status(
+                    document_id, 
+                    DocumentStatus.ERROR, 
+                    error_msg,
+                    "exception_error"
+                )
             raise
         
         finally:
