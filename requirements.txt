@@ -30,6 +30,7 @@ python-dotenv>=1.0.0
 pydantic>=2.0.0
 tqdm>=4.65.0
 pathlib>=1.0.1
+tenacity>=8.2.0
 
 # Validación de archivos y seguridad
 python-magic>=0.4.27
@@ -57,6 +58,7 @@ psutil>=5.9.0
 
 # Para validación de datos
 pydantic>=2.0.0
+pydantic-settings>=2.0.0
 
 # Para monitoreo avanzado
 prometheus-client>=0.17.0

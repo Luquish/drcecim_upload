@@ -12,6 +12,8 @@ import faiss
 import json
 from datetime import datetime
 from tqdm import tqdm
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import openai
 
 from models.openai_model import OpenAIEmbedding
 from config.settings import (
@@ -75,21 +77,7 @@ class EmbeddingService:
         logger.info(f"Generando embeddings con OpenAI para {total_texts} textos")
         
         # Preprocesar textos
-        valid_texts = []
-        invalid_indices = []
-        
-        for i, text in enumerate(texts):
-            if not text or not isinstance(text, str):
-                logger.warning(f"Texto inválido en índice {i}")
-                invalid_indices.append(i)
-                valid_texts.append("texto inválido")
-            else:
-                # Limpiar y preparar el texto
-                text = text.strip()
-                if len(text) < 10:
-                    logger.warning(f"Texto muy corto en índice {i}")
-                    text = text + " " + text  # Duplicar texto corto
-                valid_texts.append(text)
+        valid_texts = self._preprocess_texts(texts)
         
         # Generar embeddings con OpenAI
         embeddings = []
@@ -100,33 +88,97 @@ class EmbeddingService:
             for i in tqdm(range(0, len(valid_texts), openai_batch_size), 
                          desc="Generando embeddings con OpenAI"):
                 batch = valid_texts[i:i + openai_batch_size]
-                try:
-                    # Llamar a la API de OpenAI
-                    batch_embeddings = self.model.encode(
-                        batch,
-                        convert_to_numpy=True,
-                        normalize_embeddings=False
-                    )
-                    embeddings.append(batch_embeddings)
-                except Exception as e:
-                    logger.error(f"Error en batch OpenAI {i}: {str(e)}")
-                    raise
+                batch_embeddings = self._generate_batch_embeddings_with_retry(batch)
+                embeddings.append(batch_embeddings)
             
-            # Concatenar embeddings
-            all_embeddings = np.vstack(embeddings)
-            
-            # Normalizar si es necesario
-            if np.any(np.sum(all_embeddings * all_embeddings, axis=1) > 1.0):
-                logger.info("Normalizando embeddings finales...")
-                all_embeddings = all_embeddings / np.sqrt(
-                    np.sum(all_embeddings * all_embeddings, axis=1, keepdims=True)
-                )
-            
+            # Concatenar y normalizar embeddings
+            all_embeddings = self._finalize_embeddings(embeddings)
             return all_embeddings
                 
         except Exception as e:
             logger.error(f"Error general en generación de embeddings con OpenAI: {str(e)}")
             raise
+    
+    def _preprocess_texts(self, texts: List[str]) -> List[str]:
+        """
+        Preprocesa textos para asegurar que sean válidos para la API de OpenAI.
+        
+        Args:
+            texts (List[str]): Textos originales
+            
+        Returns:
+            List[str]: Textos válidos y preprocesados
+        """
+        valid_texts = []
+        
+        for i, text in enumerate(texts):
+            if not text or not isinstance(text, str):
+                logger.warning(f"Texto inválido en índice {i}")
+                valid_texts.append("texto inválido")
+            else:
+                # Limpiar y preparar el texto
+                text = text.strip()
+                if len(text) < 10:
+                    logger.warning(f"Texto muy corto en índice {i}")
+                    text = text + " " + text  # Duplicar texto corto
+                valid_texts.append(text)
+        
+        return valid_texts
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type((
+            openai.APITimeoutError,
+            openai.RateLimitError, 
+            openai.APIConnectionError,
+            openai.InternalServerError
+        ))
+    )
+    def _generate_batch_embeddings_with_retry(self, batch: List[str]) -> np.ndarray:
+        """
+        Genera embeddings para un batch con reintentos automáticos.
+        
+        Args:
+            batch (List[str]): Batch de textos
+            
+        Returns:
+            np.ndarray: Embeddings del batch
+        """
+        try:
+            return self.model.encode(
+                batch,
+                convert_to_numpy=True,
+                normalize_embeddings=False
+            )
+        except openai.APIError as e:
+            logger.error(f"Error específico de OpenAI API: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error inesperado en batch: {str(e)}")
+            raise
+    
+    def _finalize_embeddings(self, embeddings: List[np.ndarray]) -> np.ndarray:
+        """
+        Concatena y normaliza los embeddings finales.
+        
+        Args:
+            embeddings (List[np.ndarray]): Lista de arrays de embeddings
+            
+        Returns:
+            np.ndarray: Array final de embeddings normalizados
+        """
+        # Concatenar embeddings
+        all_embeddings = np.vstack(embeddings)
+        
+        # Normalizar si es necesario
+        if np.any(np.sum(all_embeddings * all_embeddings, axis=1) > 1.0):
+            logger.info("Normalizando embeddings finales...")
+            all_embeddings = all_embeddings / np.sqrt(
+                np.sum(all_embeddings * all_embeddings, axis=1, keepdims=True)
+            )
+        
+        return all_embeddings
     
     def create_faiss_index(self, embeddings: np.ndarray) -> faiss.Index:
         """

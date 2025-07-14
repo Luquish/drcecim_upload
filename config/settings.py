@@ -5,7 +5,8 @@ Configuración central para el sistema DrCecim Upload usando Pydantic.
 import os
 from pathlib import Path
 from typing import List, Optional
-from pydantic import BaseSettings, Field, validator
+from pydantic import Field, validator
+from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
 # Cargar variables de entorno desde archivo .env
@@ -221,7 +222,7 @@ class DrCecimConfig(BaseSettings):
                 'processed_prefix': self.google_cloud.gcs_processed_prefix,
                 'temp_prefix': self.google_cloud.gcs_temp_prefix,
             },
-                         'openai': {
+                 'openai': {
                  'api_key': self.openai.openai_api_key,
                  'embedding_model': self.openai.embedding_model,
                  'api_timeout': self.openai.api_timeout,
