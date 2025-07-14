@@ -47,6 +47,33 @@ check_required_vars() {
     print_success "Variables de entorno verificadas"
 }
 
+# Copiar módulos compartidos a una función específica
+copy_shared_modules() {
+    local function_dir=$1
+    print_message "Copiando módulos compartidos a ${function_dir}..."
+    
+    # Copiar desde la raíz del repositorio
+    cp -r ../config ${function_dir}/
+    cp -r ../services ${function_dir}/
+    cp -r ../utils ${function_dir}/
+    cp -r ../models ${function_dir}/
+    
+    print_success "Módulos compartidos copiados a ${function_dir}"
+}
+
+# Limpiar módulos compartidos de una función específica
+cleanup_shared_modules() {
+    local function_dir=$1
+    print_message "Limpiando módulos compartidos de ${function_dir}..."
+    
+    rm -rf ${function_dir}/config
+    rm -rf ${function_dir}/services
+    rm -rf ${function_dir}/utils
+    rm -rf ${function_dir}/models
+    
+    print_success "Módulos compartidos eliminados de ${function_dir}"
+}
+
 # Configurar variables
 GCF_REGION=${GCF_REGION:-"us-central1"}
 ENTRY_BUCKET_NAME="${GCS_BUCKET_NAME}"
@@ -68,11 +95,15 @@ check_required_vars
 # Función 1: Procesar PDFs a chunks
 print_message "Desplegando función 1: process-pdf-to-chunks..."
 
+# Copiar módulos compartidos
+copy_shared_modules "./process_pdf"
+
+# Desplegar función
 gcloud functions deploy process-pdf-to-chunks \
   --gen2 \
   --runtime=python311 \
   --region=${GCF_REGION} \
-  --source=. \
+  --source=./process_pdf \
   --entry-point=process_pdf_to_chunks \
   --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
   --trigger-event-filters="bucket=${ENTRY_BUCKET_NAME}" \
@@ -84,6 +115,9 @@ gcloud functions deploy process-pdf-to-chunks \
   --set-env-vars="GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCF_PROJECT_ID=${GCF_PROJECT_ID},ENVIRONMENT=production" \
   --project=${GCF_PROJECT_ID}
 
+# Limpiar módulos compartidos
+cleanup_shared_modules "./process_pdf"
+
 if [[ $? -eq 0 ]]; then
     print_success "Función process-pdf-to-chunks desplegada exitosamente"
 else
@@ -94,11 +128,15 @@ fi
 # Función 2: Generar embeddings
 print_message "Desplegando función 2: create-embeddings-from-chunks..."
 
+# Copiar módulos compartidos
+copy_shared_modules "./create_embeddings"
+
+# Desplegar función
 gcloud functions deploy create-embeddings-from-chunks \
   --gen2 \
   --runtime=python311 \
   --region=${GCF_REGION} \
-  --source=. \
+  --source=./create_embeddings \
   --entry-point=create_embeddings_from_chunks \
   --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
   --trigger-event-filters="bucket=${PROCESSED_BUCKET_NAME}" \
@@ -107,8 +145,12 @@ gcloud functions deploy create-embeddings-from-chunks \
   --memory=2048MB \
   --timeout=900s \
   --max-instances=5 \
+  --concurrency=1 \
   --set-env-vars="GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCF_PROJECT_ID=${GCF_PROJECT_ID},ENVIRONMENT=production" \
   --project=${GCF_PROJECT_ID}
+
+# Limpiar módulos compartidos
+cleanup_shared_modules "./create_embeddings"
 
 if [[ $? -eq 0 ]]; then
     print_success "Función create-embeddings-from-chunks desplegada exitosamente"

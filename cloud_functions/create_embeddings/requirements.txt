@@ -1,0 +1,27 @@
+# =============================================================================
+# DEPENDENCIAS PARA CREATE-EMBEDDINGS-FROM-CHUNKS CLOUD FUNCTION
+# =============================================================================
+
+# Functions Framework (requerido)
+functions-framework>=3.4.0
+
+# Google Cloud Services
+google-cloud-storage>=2.10.0
+
+# OpenAI API
+openai>=1.3.0
+
+# Vectorización y búsqueda
+faiss-cpu>=1.7.4
+
+# Análisis de datos
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Utilidades
+python-dotenv>=1.0.0
+tqdm>=4.65.0
+
+# Web framework
+flask>=2.0.0
+werkzeug>=2.0.0 

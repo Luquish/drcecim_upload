@@ -2,11 +2,17 @@
 Aplicación Streamlit para cargar y procesar documentos PDF usando DrCecim.
 """
 import streamlit as st
+import requests
+import json
 import time
 from typing import Dict, Any, Optional
 from pathlib import Path
 import os
 from datetime import datetime
+import tempfile
+
+# Importar servicio GCS
+from services.gcs_service import GCSService
 
 # Configurar la página
 st.set_page_config(
@@ -37,15 +43,9 @@ except ImportError:
 # CONFIGURACIÓN Y ESTADO
 # =============================================================================
 
-# URL de la Cloud Function (configurar según tu deployment)
-CLOUD_FUNCTION_URL = st.secrets.get("CLOUD_FUNCTION_URL", "")
-
 # Inicializar estado de la sesión
 if 'processing_history' not in st.session_state:
     st.session_state.processing_history = []
-
-if 'current_processing' not in st.session_state:
-    st.session_state.current_processing = None
 
 # =============================================================================
 # FUNCIONES AUXILIARES
@@ -86,45 +86,43 @@ def validate_file(uploaded_file) -> Dict[str, Any]:
     
     return {'valid': True}
 
-def upload_file_to_gcs(file_data: bytes, filename: str) -> Dict[str, Any]:
-    """Sube el archivo directamente a Google Cloud Storage."""
+def upload_file_to_bucket(file_data: bytes, filename: str) -> Dict[str, Any]:
+    """Sube el archivo directamente al bucket de GCS para procesamiento asíncrono."""
     try:
-        # Importar servicio GCS
-        from services.gcs_service import GCSService
-        
         # Inicializar servicio GCS
         gcs_service = GCSService()
         
         # Crear archivo temporal
-        import tempfile
-        import os
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-            tmp_file.write(file_data)
-            tmp_file_path = tmp_file.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_file:
+            temp_file.write(file_data)
+            temp_file_path = temp_file.name
         
         try:
-            # Subir archivo al bucket (esto activará automáticamente el pipeline)
-            gcs_path = filename  # Subir directamente al root del bucket
-            success = gcs_service.upload_file(tmp_file_path, gcs_path)
+            # Subir archivo al bucket (directamente en la raíz para activar el trigger)
+            gcs_path = filename
+            success = gcs_service.upload_file(
+                local_path=temp_file_path,
+                gcs_path=gcs_path,
+                content_type='application/pdf'
+            )
             
             if success:
                 return {
-                    'success': True, 
+                    'success': True,
                     'filename': filename,
-                    'gcs_path': gcs_path,
-                    'message': 'Archivo subido exitosamente. El procesamiento comenzará automáticamente.'
+                    'message': f'Archivo {filename} subido exitosamente para procesamiento asíncrono'
                 }
             else:
-                return {'success': False, 'error': 'Error al subir archivo a Google Cloud Storage'}
-                
+                return {
+                    'success': False,
+                    'error': 'Error al subir el archivo al bucket'
+                }
         finally:
             # Limpiar archivo temporal
-            if os.path.exists(tmp_file_path):
-                os.remove(tmp_file_path)
-    
+            os.unlink(temp_file_path)
+            
     except Exception as e:
-        return {'success': False, 'error': f'Error al subir archivo: {str(e)}'}
+        return {'success': False, 'error': f'Error inesperado: {str(e)}'}
 
 def add_to_history(filename: str, result: Dict[str, Any]):
     """Agrega un resultado al historial de procesamiento."""
@@ -166,22 +164,22 @@ def render_file_uploader():
     # Instrucciones
     with st.expander("📋 Instrucciones", expanded=False):
         st.markdown("""
-        **Pasos para cargar un documento:**
+        **Pasos para procesar un documento:**
         
         1. **Selecciona un archivo PDF** usando el botón de abajo
         2. **Verifica** que el archivo sea válido (tamaño y tipo)
-        3. **Haz clic en "Subir Documento"** para enviarlo al sistema
-        4. **El procesamiento comenzará automáticamente** en segundo plano:
-           - Conversión del PDF a chunks de texto
-           - Generación de embeddings con OpenAI
-           - Actualización del índice FAISS
-        5. **El documento aparecerá en el sistema** en unos minutos
+        3. **Haz clic en "Procesar Documento"** para iniciar el procesamiento
+        4. **Espera** mientras el sistema:
+           - Convierte el PDF a Markdown
+           - Genera chunks de texto
+           - Crea embeddings con OpenAI
+           - Sube los datos a Google Cloud Storage
+        5. **Revisa los resultados** en la sección de resultados
         
         **Notas importantes:**
-        - El procesamiento es completamente asíncrono - no necesitas esperar
+        - El procesamiento puede tomar varios minutos dependiendo del tamaño del documento
         - Los documentos se procesan usando OpenAI para generar embeddings
         - Los resultados se almacenan en Google Cloud Storage para uso del chatbot
-        - El sistema usa una arquitectura orientada a eventos para mayor robustez
         """)
     
     # Subir archivo
@@ -212,76 +210,65 @@ def render_file_uploader():
     return None
 
 def render_processing_button(uploaded_file):
-    """Renderiza el botón de procesamiento."""
+    """Renderiza el botón de procesamiento y maneja la subida al bucket."""
     if uploaded_file is None:
         st.warning("⚠️ Primero selecciona un archivo PDF")
-        return False
-    
-    # Botón de carga
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("📤 Subir Documento", type="primary", use_container_width=True):
-            return True
-    
-    return False
-
-def render_processing_status():
-    """Renderiza el estado del procesamiento actual."""
-    if st.session_state.current_processing:
-        st.subheader("📤 Subiendo archivo...")
-        
-        # Spinner simple
-        with st.spinner("Subiendo archivo a Google Cloud Storage..."):
-            time.sleep(1)  # Breve pausa para mostrar el spinner
-        
-        return True
-    
-    return False
-
-def render_results(result: Dict[str, Any]):
-    """Renderiza los resultados del procesamiento."""
-    st.subheader("📊 Resultado de la Carga")
-    
-    if result.get('success', False):
-        st.success("✅ ¡Éxito! Archivo subido correctamente")
-        
-        # Información del archivo subido
-        st.info(f"📄 **Archivo:** {result.get('filename', 'N/A')}")
-        st.info(f"💬 **Mensaje:** {result.get('message', 'N/A')}")
-        
-        # Información sobre el procesamiento automático
-        st.markdown("### 🔄 ¿Qué sigue?")
-        st.write("El archivo se está procesando automáticamente en segundo plano:")
-        st.write("1. ✅ **Paso 1**: Conversión de PDF a chunks de texto")
-        st.write("2. ⏳ **Paso 2**: Generación de embeddings con OpenAI")
-        st.write("3. ⏳ **Paso 3**: Actualización del índice FAISS")
-        st.write("")
-        st.write("📋 **El documento aparecerá en el sistema en unos minutos.**")
-        
-        # Archivos en GCS
-        gcs_path = result.get('gcs_path')
-        if gcs_path:
-            st.write(f"📁 **Ubicación:** `{gcs_path}`")
-    
-    else:
-        st.error("❌ Error al subir archivo")
-        error_msg = result.get('error', 'Error desconocido')
-        st.write(f"**Error:** {error_msg}")
-        
-        # Sugerencias de solución
-        st.subheader("💡 Sugerencias")
-        st.write("- Verifica que el archivo PDF no esté dañado")
-        st.write("- Asegúrate de que el archivo tenga contenido de texto")
-        st.write("- Intenta con un archivo más pequeño")
-        st.write("- Verifica la configuración de Google Cloud Storage")
-
-def render_history():
-    """Renderiza el historial de carga de documentos."""
-    if not st.session_state.processing_history:
-        st.info("📝 No hay historial de cargas")
         return
     
-    st.subheader("📚 Historial de Cargas")
+    # Botón de procesamiento
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🚀 Procesar Documento", type="primary", use_container_width=True):
+            # Validar archivo
+            validation = validate_file(uploaded_file)
+            if not validation['valid']:
+                st.error(f"❌ Error de validación: {validation['error']}")
+                return
+            
+            # Mostrar mensaje de procesamiento
+            with st.spinner("⏳ Subiendo archivo para procesamiento..."):
+                # Subir archivo al bucket
+                file_data = uploaded_file.read()
+                result = upload_file_to_bucket(file_data, uploaded_file.name)
+                
+                # Agregar al historial
+                add_to_history(uploaded_file.name, result)
+                
+                # Mostrar resultado
+                if result['success']:
+                    st.success(f"✅ ¡Éxito! El archivo **{uploaded_file.name}** ha sido enviado para procesamiento.")
+                    st.info("📋 **Información importante:**")
+                    st.markdown("""
+                    - El archivo aparecerá en el sistema en **unos minutos**
+                    - El procesamiento es completamente **asíncrono**
+                    - No necesitas esperar en esta pantalla
+                    - Puedes cerrar el navegador y volver después
+                    """)
+                else:
+                    st.error(f"❌ Error al subir el archivo: {result.get('error', 'Error desconocido')}")
+                    
+                # Limpiar el archivo del uploader
+                if 'uploaded_file' in st.session_state:
+                    del st.session_state['uploaded_file']
+
+def render_processing_status():
+    """Renderiza el estado del procesamiento actual (simplificado para arquitectura asíncrona)."""
+    # Esta función ya no es necesaria con la nueva arquitectura asíncrona
+    pass
+
+def render_results(result: Dict[str, Any]):
+    """Renderiza los resultados del procesamiento (simplificado para arquitectura asíncrona)."""
+    # Esta función ya no es necesaria con la nueva arquitectura asíncrona
+    # Los resultados se muestran directamente en render_processing_button
+    pass
+
+def render_history():
+    """Renderiza el historial de procesamiento."""
+    if not st.session_state.processing_history:
+        st.info("📝 No hay historial de procesamiento")
+        return
+    
+    st.subheader("📚 Historial de Procesamiento")
     
     for i, item in enumerate(st.session_state.processing_history):
         with st.expander(f"📄 {item['filename']} - {item['timestamp']}", expanded=i==0):
@@ -330,7 +317,7 @@ def render_sidebar():
 # =============================================================================
 
 def main():
-    """Función principal de la aplicación."""
+    """Función principal de la aplicación (simplificada para arquitectura asíncrona)."""
     # Renderizar componentes
     render_header()
     render_sidebar()
@@ -338,31 +325,8 @@ def main():
     # Área principal
     uploaded_file = render_file_uploader()
     
-    # Botón de procesamiento
-    if render_processing_button(uploaded_file):
-        st.session_state.current_processing = True
-        
-        # Mostrar estado de procesamiento
-        if render_processing_status():
-            # Subir archivo a GCS
-            try:
-                file_data = uploaded_file.read()
-                result = upload_file_to_gcs(file_data, uploaded_file.name)
-                
-                # Agregar al historial
-                add_to_history(uploaded_file.name, result)
-                
-                # Mostrar resultados
-                render_results(result)
-                
-            except Exception as e:
-                st.error(f"Error inesperado: {str(e)}")
-                result = {'success': False, 'error': str(e)}
-                add_to_history(uploaded_file.name, result)
-            
-            finally:
-                st.session_state.current_processing = None
-                st.rerun()
+    # Botón de procesamiento (ahora maneja toda la lógica internamente)
+    render_processing_button(uploaded_file)
     
     # Historial
     st.divider()
