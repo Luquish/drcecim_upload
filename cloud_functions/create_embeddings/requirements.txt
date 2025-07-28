@@ -2,14 +2,24 @@
 # DEPENDENCIAS PARA CREATE-EMBEDDINGS-FROM-CHUNKS CLOUD FUNCTION
 # =============================================================================
 
-# Functions Framework (requerido)
-functions-framework>=3.4.0
+# Functions Framework (requerido para Cloud Functions)
+functions-framework>=3.4.0,<3.6.0
 
+# AI/ML Libraries para embeddings
+openai>=1.3.0,<1.15.0
+numpy>=1.24.0,<1.27.0
+faiss-cpu>=1.7.4,<1.8.0
 
+# Web framework (compatibilidad con Cloud Functions)
+flask>=2.0.0,<3.1.0
+werkzeug>=2.0.0,<3.1.0
 
-# Web framework
-flask>=2.0.0
-werkzeug>=2.0.0 
+# Utilidades para manejo de datos
+pandas>=2.0.0,<2.3.0
+tenacity>=8.2.0,<8.3.0
 
-# Paquete local compartido
+# Paquete local compartido con dependencias core
 -e ../..
+
+# Dependencias adicionales para Cloud Functions
+google-cloud-logging>=3.5.0,<3.10.0

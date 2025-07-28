@@ -5,7 +5,15 @@ Script para migrar variables de entorno a Google Secret Manager.
 import os
 import sys
 import argparse
+import logging
 from pathlib import Path
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Agregar el directorio padre al path para importar módulos
 sys.path.append(str(Path(__file__).parent.parent))
@@ -26,11 +34,11 @@ def main():
     # Determinar project ID
     project_id = args.project_id or GCF_PROJECT_ID
     if not project_id:
-        print("❌ ERROR: Debe especificar --project-id o configurar GCF_PROJECT_ID")
+        logger.error("ERROR: Debe especificar --project-id o configurar GCF_PROJECT_ID")
         sys.exit(1)
     
-    print(f"🚀 Migrando secretos para proyecto: {project_id}")
-    print("=" * 50)
+    logger.info(f"Migrando secretos para proyecto: {project_id}")
+    logger.info("=" * 50)
     
     # Variables críticas para migrar
     variables_to_migrate = [
@@ -62,69 +70,69 @@ def main():
     ]
     
     # Verificar que variables existen
-    print("📋 Verificando variables de entorno...")
+    logger.info("Verificando variables de entorno...")
     available_vars = []
     for var in variables_to_migrate:
         value = os.getenv(var)
         if value:
-            print(f"  ✅ {var}: {'*' * min(len(value), 20)}...")
+            logger.info(f"  ✅ {var}: {'*' * min(len(value), 20)}...")
             available_vars.append(var)
         else:
-            print(f"  ⚠️  {var}: No encontrada")
+            logger.warning(f"  ⚠️  {var}: No encontrada")
     
     if not available_vars:
-        print("\n❌ No se encontraron variables de entorno para migrar")
+        logger.error("No se encontraron variables de entorno para migrar")
         sys.exit(1)
     
-    print(f"\n📦 Variables para migrar: {len(available_vars)}")
+    logger.info(f"Variables para migrar: {len(available_vars)}")
     
     if args.dry_run:
-        print("\n🔍 MODO DRY RUN - No se harán cambios reales")
+        logger.info("MODO DRY RUN - No se harán cambios reales")
         for var in available_vars:
             secret_name = var.lower().replace("_", "-")
-            print(f"  Migraría: {var} → {secret_name}")
+            logger.info(f"  Migraría: {var} → {secret_name}")
         return
     
     # Confirmar migración
     if not args.force:
         response = input(f"\n¿Continuar con la migración de {len(available_vars)} variables? (y/N): ")
         if response.lower() != 'y':
-            print("❌ Migración cancelada")
+            logger.info("Migración cancelada")
             sys.exit(0)
     
     # Realizar migración
     try:
         config_manager = SecureConfigManager(project_id)
         
-        print("\n🔄 Iniciando migración...")
+        logger.info("Iniciando migración...")
         results = config_manager.migrate_env_to_secrets(available_vars)
         
         # Mostrar resultados
         successful = sum(1 for success in results.values() if success)
         failed = len(results) - successful
         
-        print(f"\n📊 Resultados de migración:")
-        print(f"  ✅ Exitosas: {successful}")
-        print(f"  ❌ Fallidas: {failed}")
+        logger.info(f"Resultados de migración:")
+        logger.info(f"  ✅ Exitosas: {successful}")
+        logger.info(f"  ❌ Fallidas: {failed}")
         
         for var, success in results.items():
             status = "✅" if success else "❌"
             secret_name = var.lower().replace("_", "-")
-            print(f"  {status} {var} → {secret_name}")
+            logger.info(f"  {status} {var} → {secret_name}")
         
         if failed > 0:
-            print(f"\n⚠️  {failed} secretos fallaron. Revisa los logs para detalles.")
+            logger.warning(f"{failed} secretos fallaron. Revisa los logs para detalles.")
             if not args.force:
                 sys.exit(1)
         else:
-            print("\n🎉 ¡Migración completada exitosamente!")
-            print("\n💡 Pasos siguientes:")
-            print("1. Verifica que los secretos estén en Secret Manager")
-            print("2. Actualiza las configuraciones de tus Cloud Functions")
-            print("3. Considera remover las variables de entorno locales")
+            logger.info("¡Migración completada exitosamente!")
+            logger.info("Pasos siguientes:")
+            logger.info("1. Verifica que los secretos estén en Secret Manager")
+            logger.info("2. Actualiza las configuraciones de tus Cloud Functions")
+            logger.info("3. Considera remover las variables de entorno locales")
     
     except Exception as e:
-        print(f"\n❌ Error durante la migración: {str(e)}")
+        logger.error(f"Error durante la migración: {str(e)}")
         sys.exit(1)
 
 
@@ -133,23 +141,23 @@ def list_current_secrets():
     try:
         config_manager = SecureConfigManager()
         if not config_manager.secrets_service:
-            print("❌ Secret Manager no está disponible")
+            logger.error("Secret Manager no está disponible")
             return
         
         secrets_info = config_manager.secrets_service.list_secrets()
         secrets = secrets_info['secrets']
         
-        print(f"📋 Secretos actuales en Secret Manager ({len(secrets)}):")
+        logger.info(f"Secretos actuales en Secret Manager ({len(secrets)}):")
         for secret in secrets:
-            print(f"  • {secret['name']} (creado: {secret['created']})")
+            logger.info(f"  • {secret['name']} (creado: {secret['created']})")
     
     except Exception as e:
-        print(f"❌ Error listando secretos: {str(e)}")
+        logger.error(f"Error listando secretos: {str(e)}")
 
 
 def verify_migration():
     """Verifica que los secretos migrados funcionen correctamente."""
-    print("🔍 Verificando secretos migrados...")
+    logger.info("Verificando secretos migrados...")
     
     try:
         config_manager = SecureConfigManager()
@@ -160,12 +168,12 @@ def verify_migration():
         for secret_name in test_secrets:
             value = config_manager.get_config_value(secret_name, env_fallback=False)
             if value:
-                print(f"  ✅ {secret_name}: {'*' * 20}...")
+                logger.info(f"  ✅ {secret_name}: {'*' * 20}...")
             else:
-                print(f"  ❌ {secret_name}: No encontrado")
+                logger.warning(f"  ❌ {secret_name}: No encontrado")
     
     except Exception as e:
-        print(f"❌ Error verificando secretos: {str(e)}")
+        logger.error(f"Error verificando secretos: {str(e)}")
 
 
 if __name__ == "__main__":

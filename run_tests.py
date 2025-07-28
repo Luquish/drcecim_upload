@@ -7,24 +7,33 @@ import subprocess
 import argparse
 from pathlib import Path
 
+# Configurar logging usando el sistema existente
+from config.logging_config import setup_development_logging, get_logger
+
+setup_development_logging()
+logger = get_logger(__name__)
+
 
 def run_command(command: list, description: str = "") -> bool:
     """Ejecutar un comando y manejar errores."""
     if description:
-        print(f"\n🔄 {description}")
-        print("=" * 50)
+        logger.info(f"🔄 {description}")
+        logger.info("=" * 50)
     
     try:
         result = subprocess.run(command, check=True, capture_output=True, text=True)
-        print(result.stdout)
+        if result.stdout:
+            logger.info(result.stdout)
         if result.stderr:
-            print("Advertencias:", result.stderr)
+            logger.warning(f"Advertencias: {result.stderr}")
         return True
     except subprocess.CalledProcessError as e:
-        print(f"❌ Error ejecutando: {' '.join(command)}")
-        print(f"Código de salida: {e.returncode}")
-        print(f"Stdout: {e.stdout}")
-        print(f"Stderr: {e.stderr}")
+        logger.error(f"❌ Error ejecutando: {' '.join(command)}")
+        logger.error(f"Código de salida: {e.returncode}")
+        if e.stdout:
+            logger.error(f"Stdout: {e.stdout}")
+        if e.stderr:
+            logger.error(f"Stderr: {e.stderr}")
         return False
 
 
@@ -41,11 +50,11 @@ def main():
     
     # Verificar que estamos en el directorio correcto
     if not Path("tests").exists():
-        print("❌ No se encontró el directorio 'tests'. Ejecuta desde la raíz del proyecto.")
+        logger.error("❌ No se encontró el directorio 'tests'. Ejecuta desde la raíz del proyecto.")
         sys.exit(1)
     
-    # Construir comando pytest
-    pytest_cmd = ["python", "-m", "pytest"]
+    # Construir comando pytest (usar python3 explícitamente)
+    pytest_cmd = ["python3", "-m", "pytest"]
     
     if args.verbose:
         pytest_cmd.append("-vv")
@@ -75,12 +84,12 @@ def main():
     success = run_command(pytest_cmd, description)
     
     if success:
-        print("\n✅ ¡Todas las pruebas pasaron!")
+        logger.info("✅ ¡Todas las pruebas pasaron!")
         
         if args.coverage:
-            print("\n📊 Reporte de cobertura generado en htmlcov/index.html")
+            logger.info("📊 Reporte de cobertura generado en htmlcov/index.html")
     else:
-        print("\n❌ Algunas pruebas fallaron.")
+        logger.error("❌ Algunas pruebas fallaron.")
         sys.exit(1)
 
 

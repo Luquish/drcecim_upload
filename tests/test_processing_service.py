@@ -20,11 +20,23 @@ class TestDocumentProcessor(unittest.TestCase):
     
     def tearDown(self):
         """Limpiar después de las pruebas."""
+        import shutil
+        import logging
+        
+        logger = logging.getLogger(__name__)
+        
         # Limpiar directorio temporal
         try:
-            os.rmdir(self.temp_dir)
-        except:
-            pass
+            if os.path.exists(self.temp_dir):
+                # Usar shutil.rmtree para directorios no vacíos
+                shutil.rmtree(self.temp_dir)
+                logger.debug(f"Directorio temporal limpiado: {self.temp_dir}")
+        except PermissionError as e:
+            logger.warning(f"Sin permisos para eliminar directorio temporal: {e}")
+        except OSError as e:
+            logger.warning(f"Error al eliminar directorio temporal: {e}")
+        except Exception as e:
+            logger.error(f"Error inesperado al limpiar directorio temporal: {e}")
     
     def test_init(self):
         """Probar inicialización del procesador."""

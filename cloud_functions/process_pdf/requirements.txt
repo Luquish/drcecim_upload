@@ -2,15 +2,21 @@
 # DEPENDENCIAS PARA PROCESS-PDF-TO-CHUNKS CLOUD FUNCTION
 # =============================================================================
 
-# Functions Framework (requerido)
-functions-framework>=3.4.0
+# Functions Framework (requerido para Cloud Functions)
+functions-framework>=3.4.0,<3.6.0
 
 # Procesamiento de PDF
-marker-pdf>=0.2.0
+marker-pdf>=0.2.0,<0.3.0
 
-# Web framework
-flask>=2.0.0
-werkzeug>=2.0.0 
+# Web framework (compatibilidad con Cloud Functions)
+flask>=2.0.0,<3.1.0
+werkzeug>=2.0.0,<3.1.0
 
-# Paquete local compartido
+# Sistema de archivos y utilitades
+pathlib2>=2.3.7,<2.4.0
+
+# Paquete local compartido con dependencias core
 -e ../..
+
+# Dependencias adicionales para Cloud Functions
+google-cloud-logging>=3.5.0,<3.10.0

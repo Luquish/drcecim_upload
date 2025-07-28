@@ -10,14 +10,20 @@ import json
 import logging
 import tempfile
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import functions_framework
 from google.cloud import storage
 
-# Configurar logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Configurar logging usando el sistema estandarizado
+try:
+    from config.logging_config import setup_production_logging, get_logger
+    setup_production_logging()
+    logger = get_logger(__name__)
+except ImportError:
+    # Fallback si no está disponible el sistema de logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
 
 # Importar nuestros servicios (ahora como paquete instalado)
 try:
@@ -25,6 +31,8 @@ try:
     from services.gcs_service import GCSService
     from services.status_service import StatusService, DocumentStatus
     from utils.monitoring import get_logger, get_processing_monitor, log_system_info
+    from utils.temp_file_manager import temp_dir
+    from utils.resource_managers import document_processing_context
 except ImportError as e:
     logger.error(f"Error al importar módulos: {str(e)}")
     raise
@@ -50,7 +58,7 @@ def is_pdf_file(file_name: str) -> bool:
     return file_name.lower().endswith('.pdf')
 
 
-def cleanup_temp_files(temp_path: str):
+def cleanup_temp_files(temp_path: str) -> None:
     """
     Limpia archivos temporales.
     
@@ -66,7 +74,7 @@ def cleanup_temp_files(temp_path: str):
 
 
 @functions_framework.cloud_event
-def process_pdf_to_chunks(cloud_event):
+def process_pdf_to_chunks(cloud_event: Any) -> None:
     """
     Cloud Function que se activa por eventos de Cloud Storage.
     Procesa PDFs y genera chunks de texto.
@@ -75,11 +83,22 @@ def process_pdf_to_chunks(cloud_event):
         cloud_event: Evento de Cloud Storage
     """
     try:
-        # Extraer información del evento
+        # Extraer y validar información del evento
+        if not hasattr(cloud_event, 'data') or not cloud_event.data:
+            raise ValueError("Evento de Cloud Storage inválido: sin datos")
+        
         event_data = cloud_event.data
         bucket_name = event_data.get('bucket')
         file_name = event_data.get('name')
         event_type = event_data.get('eventType')
+        
+        # Validar datos del evento
+        if not bucket_name:
+            raise ValueError("Nombre de bucket faltante en el evento")
+        if not file_name:
+            raise ValueError("Nombre de archivo faltante en el evento")
+        if not event_type:
+            raise ValueError("Tipo de evento faltante")
         
         app_logger.info(f"Evento recibido: {event_type} para archivo: {file_name}")
         
@@ -107,18 +126,15 @@ def process_pdf_to_chunks(cloud_event):
             "pdf_processing_start"
         )
         
-        # Crear directorio temporal
-        temp_dir = tempfile.mkdtemp(prefix='drcecim_pdf_')
-        temp_file_path = None
-        
-        try:
+        # Usar context manager para manejo seguro de recursos y archivos temporales
+        with temp_dir(prefix='drcecim_pdf_') as session_temp_dir:
             # Inicializar servicio GCS
             gcs_service = GCSService(bucket_name=bucket_name)
             
             # Descargar archivo PDF
             app_logger.info("Descargando PDF desde GCS", {'session_id': session_id})
-            temp_file_path = os.path.join(temp_dir, Path(file_name).name)
-            gcs_service.download_file(file_name, temp_file_path)
+            temp_file_path = session_temp_dir / Path(file_name).name
+            gcs_service.download_file(file_name, str(temp_file_path))
             
             processing_monitor.log_step(session_id, "pdf_downloaded", {'temp_path': temp_file_path})
             status_service.update_status(
@@ -132,8 +148,8 @@ def process_pdf_to_chunks(cloud_event):
             app_logger.info("Procesando PDF con DocumentProcessor", {'session_id': session_id})
             processing_monitor.log_step(session_id, "pdf_processing_started")
             
-            doc_processor = DocumentProcessor(temp_dir)
-            processed_doc = doc_processor.process_document_complete(temp_file_path)
+            doc_processor = DocumentProcessor(str(session_temp_dir))
+            processed_doc = doc_processor.process_document_complete(str(temp_file_path))
             
             if not processed_doc.get('processed_successfully', False):
                 error_msg = processed_doc.get('error', 'Error desconocido en el procesamiento')
@@ -213,29 +229,6 @@ def process_pdf_to_chunks(cloud_event):
                     error_msg,
                     "upload_error"
                 )
-            
-        except Exception as e:
-            error_msg = f"Error durante el procesamiento: {str(e)}"
-            app_logger.error(error_msg, {'session_id': session_id})
-            processing_monitor.finish_processing(session_id, success=False, error_message=error_msg)
-            if 'document_id' in locals():
-                status_service.update_status(
-                    document_id, 
-                    DocumentStatus.ERROR, 
-                    error_msg,
-                    "exception_error"
-                )
-            raise
-        
-        finally:
-            # Limpiar archivos temporales
-            if temp_file_path:
-                cleanup_temp_files(temp_file_path)
-            if temp_dir and os.path.exists(temp_dir):
-                try:
-                    os.rmdir(temp_dir)
-                except:
-                    pass
     
     except Exception as e:
         logger.error(f"Error en process_pdf_to_chunks: {str(e)}")

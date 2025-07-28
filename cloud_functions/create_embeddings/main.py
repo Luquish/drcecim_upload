@@ -208,8 +208,8 @@ def _process_embeddings_pipeline(bucket_name: str, file_name: str, session_id: s
         if os.path.exists(temp_dir):
             try:
                 os.rmdir(temp_dir)
-            except:
-                pass
+            except (OSError, PermissionError) as e:
+                logger.debug(f"No se pudo eliminar directorio temporal {temp_dir}: {e}")
 
 
 def _download_and_load_chunks(gcs_service: GCSService, file_name: str, session_id: str) -> Dict:
