@@ -1,14 +1,24 @@
 """
 Módulo de monitoreo y logging para el sistema DrCecim Upload.
+
+Este módulo proporciona:
+1. Logger personalizado con formato estructurado
+2. Métricas básicas de performance y uso
+3. Monitoreo de operaciones críticas
+4. Alertas básicas para errores
+5. Colección de estadísticas del sistema
 """
 import os
 import logging
 import json
 import time
-from datetime import datetime
-from typing import Dict, Any, Optional, List
+import psutil
+from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, List, Counter
 from functools import wraps
 from pathlib import Path
+from collections import defaultdict, deque
+from threading import Lock
 
 from config.settings import LOG_LEVEL, LOG_FORMAT, ENVIRONMENT, DEBUG
 

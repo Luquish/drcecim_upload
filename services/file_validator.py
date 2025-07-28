@@ -39,7 +39,15 @@ class PDFSecurityValidator:
         b'ActiveX',
         b'GetObject',
         b'WScript',
-        b'eval('
+        b'eval(',
+        b'/GoTo',
+        b'/URI',
+        b'/SubmitForm',
+        b'/ImportData',
+        b'/AcroForm',
+        b'shellcode',
+        b'payload',
+        b'exploit'
     ]
     
     # Lista de hash conocidos de archivos maliciosos (ejemplo)
@@ -116,6 +124,12 @@ class PDFSecurityValidator:
         # 7. Validación básica de estructura PDF
         checks["pdf_structure"] = self._validate_pdf_structure(file_data)
         
+        # 8. Validación de metadatos PDF
+        checks["metadata"] = self._validate_pdf_metadata(file_data)
+        
+        # 9. Verificar densidad de contenido sospechoso
+        checks["content_analysis"] = self._analyze_content_density(file_data)
+        
         # Determinar si el archivo es válido
         is_valid = all([
             checks["size"]["valid"],
@@ -124,7 +138,9 @@ class PDFSecurityValidator:
             checks["mime_type"]["valid"],
             checks["suspicious_content"]["valid"],
             checks["malware_hash"]["valid"],
-            checks["pdf_structure"]["valid"]
+            checks["pdf_structure"]["valid"],
+            checks["metadata"]["valid"],
+            checks["content_analysis"]["valid"]
         ])
         
         # Recopilar errores
@@ -331,7 +347,164 @@ class PDFSecurityValidator:
             if pattern in file_data:
                 return False, f"Contenido sospechoso detectado: {pattern.decode('utf-8', errors='ignore')}"
         
-        return True, "Archivo válido"
+        return True, "Validación rápida exitosa"
+    
+    def _validate_pdf_metadata(self, file_data: bytes) -> Dict[str, Any]:
+        """
+        Valida metadatos del PDF en busca de contenido sospechoso.
+        
+        Args:
+            file_data: Datos del archivo PDF
+            
+        Returns:
+            Dict: Resultado de la validación de metadatos
+        """
+        try:
+            # Buscar sección de metadatos
+            metadata_patterns = [
+                b'/Title',
+                b'/Author',
+                b'/Subject',
+                b'/Creator',
+                b'/Producer',
+                b'/CreationDate',
+                b'/ModDate'
+            ]
+            
+            suspicious_metadata = []
+            
+            # Verificar longitud excesiva de metadatos
+            for pattern in metadata_patterns:
+                start_pos = file_data.find(pattern)
+                if start_pos != -1:
+                    # Buscar el final del valor (siguiente /)
+                    end_pos = file_data.find(b'/', start_pos + len(pattern))
+                    if end_pos == -1:
+                        end_pos = start_pos + 1000  # Limitar búsqueda
+                    
+                    metadata_value = file_data[start_pos:end_pos]
+                    
+                    # Verificar longitud sospechosa
+                    if len(metadata_value) > 500:
+                        suspicious_metadata.append(f"Metadato {pattern.decode()} excesivamente largo")
+                    
+                    # Verificar contenido binario en metadatos
+                    try:
+                        metadata_value.decode('utf-8')
+                    except UnicodeDecodeError:
+                        suspicious_metadata.append(f"Contenido binario en metadato {pattern.decode()}")
+            
+            if suspicious_metadata:
+                return {
+                    "valid": False,
+                    "error": "; ".join(suspicious_metadata),
+                    "suspicious_metadata": suspicious_metadata
+                }
+            
+            return {
+                "valid": True,
+                "metadata_count": len([p for p in metadata_patterns if p in file_data])
+            }
+            
+        except Exception as e:
+            return {
+                "valid": False,
+                "error": f"Error validando metadatos: {str(e)}"
+            }
+    
+    def _analyze_content_density(self, file_data: bytes) -> Dict[str, Any]:
+        """
+        Analiza la densidad de contenido para detectar archivos sospechosos.
+        
+        Args:
+            file_data: Datos del archivo PDF
+            
+        Returns:
+            Dict: Resultado del análisis de densidad
+        """
+        try:
+            file_size = len(file_data)
+            
+            # Calcular ratios de contenido
+            text_content = 0
+            binary_content = 0
+            
+            # Contar contenido de texto vs binario
+            for byte in file_data[:min(10000, file_size)]:  # Muestra de los primeros 10KB
+                if 32 <= byte <= 126:  # Caracteres ASCII imprimibles
+                    text_content += 1
+                else:
+                    binary_content += 1
+            
+            total_sampled = text_content + binary_content
+            if total_sampled == 0:
+                return {"valid": False, "error": "Archivo vacío"}
+            
+            text_ratio = text_content / total_sampled
+            
+            # Verificar ratios sospechosos
+            # PDFs legítimos tienen típicamente 60-90% contenido de texto en los primeros KB
+            if text_ratio < 0.3:
+                return {
+                    "valid": False,
+                    "error": f"Ratio de texto sospechosamente bajo: {text_ratio:.2%}",
+                    "text_ratio": text_ratio
+                }
+            
+            if text_ratio > 0.98:
+                return {
+                    "valid": False,
+                    "error": f"Ratio de texto sospechosamente alto: {text_ratio:.2%}",
+                    "text_ratio": text_ratio
+                }
+            
+            # Verificar patrones de repetición sospechosos
+            repeated_sequences = self._detect_repeated_patterns(file_data[:5000])
+            if repeated_sequences > 10:
+                return {
+                    "valid": False,
+                    "error": f"Demasiados patrones repetidos detectados: {repeated_sequences}",
+                    "repeated_patterns": repeated_sequences
+                }
+            
+            return {
+                "valid": True,
+                "text_ratio": text_ratio,
+                "repeated_patterns": repeated_sequences,
+                "analysis": "normal"
+            }
+            
+        except Exception as e:
+            return {
+                "valid": False,
+                "error": f"Error en análisis de contenido: {str(e)}"
+            }
+    
+    def _detect_repeated_patterns(self, data: bytes, min_length: int = 4) -> int:
+        """
+        Detecta patrones repetidos en los datos.
+        
+        Args:
+            data: Datos a analizar
+            min_length: Longitud mínima del patrón
+            
+        Returns:
+            int: Número de patrones repetidos encontrados
+        """
+        patterns = {}
+        repeated_count = 0
+        
+        # Buscar patrones de longitud mínima
+        for i in range(len(data) - min_length):
+            pattern = data[i:i + min_length]
+            patterns[pattern] = patterns.get(pattern, 0) + 1
+        
+        # Contar patrones que aparecen múltiples veces
+        for pattern, count in patterns.items():
+            if count > 5:  # Umbral para considerar "repetido"
+                repeated_count += 1
+        
+        return repeated_count
 
 
 # Instancia global del validador

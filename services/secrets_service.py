@@ -29,9 +29,12 @@ class SecretsService:
         try:
             self.client = secretmanager.SecretManagerServiceClient()
             logger.info(f"Cliente de Secret Manager inicializado para proyecto: {self.project_id}")
+        except ImportError as e:
+            logger.error(f"Error importando Secret Manager client: {str(e)}")
+            raise ImportError("Google Cloud Secret Manager no está disponible")
         except Exception as e:
-            logger.error(f"Error inicializando Secret Manager: {str(e)}")
-            raise
+            logger.error(f"Error de conectividad inicializando Secret Manager: {str(e)}")
+            raise ConnectionError(f"No se pudo conectar con Secret Manager: {str(e)}")
     
     def get_secret(self, secret_name: str, version: str = "latest") -> Optional[str]:
         """
@@ -55,8 +58,14 @@ class SecretsService:
             logger.info(f"Secreto '{secret_name}' obtenido exitosamente")
             return secret_value
             
+        except ValueError as e:
+            logger.error(f"Nombre de secreto inválido '{secret_name}': {str(e)}")
+            return None
+        except UnicodeDecodeError as e:
+            logger.error(f"Error decodificando secreto '{secret_name}': {str(e)}")
+            return None
         except Exception as e:
-            logger.error(f"Error obteniendo secreto '{secret_name}': {str(e)}")
+            logger.error(f"Error de conectividad obteniendo secreto '{secret_name}': {str(e)}")
             return None
     
     def create_secret(self, secret_name: str, secret_value: str) -> bool:
@@ -93,8 +102,14 @@ class SecretsService:
             logger.info(f"Secreto '{secret_name}' creado exitosamente")
             return True
             
+        except ValueError as e:
+            logger.error(f"Nombre o valor de secreto inválido '{secret_name}': {str(e)}")
+            return False
+        except UnicodeEncodeError as e:
+            logger.error(f"Error codificando valor del secreto '{secret_name}': {str(e)}")
+            return False
         except Exception as e:
-            logger.error(f"Error creando secreto '{secret_name}': {str(e)}")
+            logger.error(f"Error de conectividad creando secreto '{secret_name}': {str(e)}")
             return False
     
     def update_secret(self, secret_name: str, secret_value: str) -> bool:

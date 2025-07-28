@@ -89,18 +89,21 @@ class GCSService:
             files = [blob.name for blob in blobs]
             logger.info(f"Encontrados {len(files)} archivos con prefijo '{prefix}'")
             return files
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error en parámetros al listar archivos: {str(e)}")
+            raise ValueError(f"Parámetros inválidos para listar archivos: {str(e)}")
         except Exception as e:
-            logger.error(f"Error al listar archivos: {str(e)}")
-            raise
+            logger.error(f"Error de conectividad al listar archivos: {str(e)}")
+            raise ConnectionError(f"No se pudo conectar con GCS: {str(e)}")
     
-    def upload_file(self, local_path: str, gcs_path: str, content_type: str = None) -> bool:
+    def upload_file(self, local_path: str, gcs_path: str, content_type: Optional[str] = None) -> bool:
         """
         Sube un archivo local a GCS.
         
         Args:
             local_path (str): Ruta local del archivo
             gcs_path (str): Ruta destino en GCS
-            content_type (str): Tipo de contenido del archivo
+            content_type (Optional[str]): Tipo de contenido del archivo
             
         Returns:
             bool: True si se subió exitosamente
@@ -117,8 +120,14 @@ class GCSService:
             logger.info(f"Archivo subido exitosamente: {local_path} -> gs://{self.bucket_name}/{gcs_path}")
             return True
             
+        except FileNotFoundError as e:
+            logger.error(f"Archivo local no encontrado: {local_path}")
+            return False
+        except PermissionError as e:
+            logger.error(f"Sin permisos para leer archivo: {local_path}")
+            return False
         except Exception as e:
-            logger.error(f"Error al subir archivo: {str(e)}")
+            logger.error(f"Error de conectividad al subir archivo: {str(e)}")
             return False
     
     def upload_string(self, content: str, gcs_path: str, content_type: str = 'text/plain') -> bool:
@@ -141,11 +150,14 @@ class GCSService:
             logger.info(f"String subido exitosamente: gs://{self.bucket_name}/{gcs_path}")
             return True
             
+        except (ValueError, TypeError) as e:
+            logger.error(f"Contenido o tipo de contenido inválido: {str(e)}")
+            return False
         except Exception as e:
-            logger.error(f"Error al subir string: {str(e)}")
+            logger.error(f"Error de conectividad al subir string: {str(e)}")
             return False
     
-    def download_file(self, gcs_path: str, local_path: str = None) -> str:
+    def download_file(self, gcs_path: str, local_path: Optional[str] = None) -> str:
         """
         Descarga un archivo de GCS a una ubicación local.
         
@@ -169,9 +181,14 @@ class GCSService:
             logger.info(f"Archivo descargado: gs://{self.bucket_name}/{gcs_path} -> {local_path}")
             return str(local_path)
             
+        except FileNotFoundError:
+            raise  # Re-lanzar FileNotFoundError tal como está
+        except PermissionError as e:
+            logger.error(f"Sin permisos para escribir en: {local_path}")
+            raise PermissionError(f"Sin permisos de escritura: {local_path}")
         except Exception as e:
-            logger.error(f"Error al descargar archivo: {str(e)}")
-            raise
+            logger.error(f"Error de conectividad al descargar archivo: {str(e)}")
+            raise ConnectionError(f"Error de red al descargar desde GCS: {str(e)}")
     
     def read_file_as_string(self, gcs_path: str) -> str:
         """
@@ -193,9 +210,14 @@ class GCSService:
             logger.info(f"Archivo leído como string: gs://{self.bucket_name}/{gcs_path}")
             return content
             
+        except FileNotFoundError:
+            raise  # Re-lanzar FileNotFoundError tal como está
+        except UnicodeDecodeError as e:
+            logger.error(f"Error de codificación al leer archivo: {gcs_path}")
+            raise ValueError(f"Archivo no es texto válido UTF-8: {gcs_path}")
         except Exception as e:
-            logger.error(f"Error al leer archivo como string: {str(e)}")
-            raise
+            logger.error(f"Error de conectividad al leer archivo como string: {str(e)}")
+            raise ConnectionError(f"Error de red al leer desde GCS: {str(e)}")
     
     def read_file_as_bytes(self, gcs_path: str) -> bytes:
         """
@@ -217,9 +239,11 @@ class GCSService:
             logger.info(f"Archivo leído como bytes: gs://{self.bucket_name}/{gcs_path}")
             return content
             
+        except FileNotFoundError:
+            raise  # Re-lanzar FileNotFoundError tal como está
         except Exception as e:
-            logger.error(f"Error al leer archivo como bytes: {str(e)}")
-            raise
+            logger.error(f"Error de conectividad al leer archivo como bytes: {str(e)}")
+            raise ConnectionError(f"Error de red al leer desde GCS: {str(e)}")
     
     def file_exists(self, gcs_path: str) -> bool:
         """
@@ -235,7 +259,8 @@ class GCSService:
             blob = self.bucket.blob(gcs_path)
             return blob.exists()
         except Exception as e:
-            logger.error(f"Error al verificar existencia del archivo: {str(e)}")
+            logger.error(f"Error de conectividad al verificar existencia del archivo: {str(e)}")
+            return False
             return False
     
     def delete_file(self, gcs_path: str) -> bool:
@@ -420,8 +445,8 @@ class GCSService:
             for temp_file in temp_files.values():
                 try:
                     os.remove(temp_file)
-                except:
-                    pass
+                except (OSError, FileNotFoundError, PermissionError) as e:
+                    logger.debug(f"No se pudo eliminar archivo temporal {temp_file}: {e}")
     
     def _cleanup_directory(self, directory: Path):
         """

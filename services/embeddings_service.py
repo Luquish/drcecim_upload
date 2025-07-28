@@ -1,5 +1,24 @@
 """
 Servicio de generación de embeddings usando OpenAI.
+
+Este módulo proporciona funcionalidades para:
+1. Generar embeddings de texto usando la API de OpenAI
+2. Crear índices FAISS para búsqueda vectorial eficiente
+3. Procesar chunks de documentos en lotes
+4. Manejar reintentos automáticos en caso de errores de API
+5. Almacenar embeddings y metadatos asociados
+
+Dependencias:
+- openai: Para generar embeddings usando la API
+- faiss-cpu: Para indexación y búsqueda vectorial
+- pandas: Para manipulación de datos
+- numpy: Para operaciones numéricas
+- tenacity: Para manejo de reintentos
+
+Configuración:
+- OPENAI_API_KEY: Clave de API de OpenAI (requerida)
+- EMBEDDING_MODEL: Modelo de embeddings a usar (default: text-embedding-3-small)
+- API_TIMEOUT: Timeout para peticiones a la API
 """
 import os
 import logging
@@ -29,7 +48,24 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     """
-    Servicio para generar embeddings usando OpenAI.
+    Servicio para generar embeddings de texto usando OpenAI y crear índices FAISS.
+    
+    Esta clase maneja todo el flujo de generación de embeddings:
+    1. Procesamiento de chunks de texto en lotes
+    2. Generación de embeddings usando OpenAI API
+    3. Creación de índices FAISS para búsqueda vectorial
+    4. Manejo de errores y reintentos automáticos
+    5. Almacenamiento de embeddings y metadatos
+    
+    Attributes:
+        temp_dir (Path): Directorio temporal para archivos
+        model (OpenAIEmbedding): Instancia del modelo de OpenAI
+        
+    Example:
+        >>> service = EmbeddingService()
+        >>> chunks = [{"text": "Texto 1", "id": "1"}, {"text": "Texto 2", "id": "2"}]
+        >>> result = service.process_chunks_to_embeddings(chunks, "documento.pdf")
+        >>> logger.info(f"Generados {result['num_embeddings']} embeddings")
     """
     
     def __init__(self, temp_dir: str = TEMP_DIR):

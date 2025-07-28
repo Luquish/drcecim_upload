@@ -1,5 +1,21 @@
 """
 Servicio de procesamiento de documentos PDF usando Marker.
+
+Este módulo proporciona funcionalidades para:
+1. Convertir documentos PDF a formato Markdown usando Marker
+2. Dividir documentos en chunks procesables para embeddings
+3. Extraer metadatos de documentos
+4. Manejar el flujo completo de procesamiento de documentos
+
+Dependencias:
+- marker-pdf: Para conversión PDF a Markdown
+- pandas: Para manipulación de datos
+- tqdm: Para barras de progreso
+
+Configuración:
+- CHUNK_SIZE: Tamaño de chunks en palabras (definido en config.settings)
+- CHUNK_OVERLAP: Solapamiento entre chunks (definido en config.settings)
+- TEMP_DIR: Directorio temporal para procesamiento
 """
 import os
 import logging
@@ -19,7 +35,21 @@ logger = logging.getLogger(__name__)
 
 class DocumentProcessor:
     """
-    Procesador de documentos PDF usando Marker.
+    Procesador de documentos PDF que convierte archivos a Markdown y los divide en chunks.
+    
+    Esta clase maneja todo el flujo de procesamiento de documentos PDF:
+    1. Conversión de PDF a Markdown usando Marker
+    2. División del texto en chunks para procesamiento
+    3. Extracción de metadatos del documento
+    4. Limpieza y normalización del contenido
+    
+    Attributes:
+        temp_dir (Path): Directorio temporal para archivos de procesamiento
+        
+    Example:
+        >>> processor = DocumentProcessor("./temp/processing")
+        >>> result = processor.process_document_complete("/path/to/document.pdf")
+        >>> logger.info(f"Procesados {result['num_chunks']} chunks")
     """
     
     def __init__(self, temp_dir: str = TEMP_DIR):
@@ -35,8 +65,20 @@ class DocumentProcessor:
         # Verificar que marker esté instalado
         self._verify_marker_installation()
         
-    def _verify_marker_installation(self):
-        """Verifica que Marker esté instalado y disponible."""
+    def _verify_marker_installation(self) -> None:
+        """
+        Verifica que Marker esté instalado y disponible en el sistema.
+        
+        Ejecuta el comando 'marker_single --help' para verificar que la herramienta
+        esté correctamente instalada y sea ejecutable.
+        
+        Raises:
+            RuntimeError: Si marker_single no está disponible o no funciona correctamente
+            
+        Note:
+            Este método se ejecuta automáticamente durante la inicialización
+            para asegurar que todas las dependencias estén disponibles.
+        """
         try:
             result = subprocess.run(['marker_single', '--help'], 
                                    stdout=subprocess.PIPE, 
@@ -56,14 +98,38 @@ class DocumentProcessor:
     
     def process_pdf_to_markdown(self, pdf_path: str, output_dir: str = None) -> Dict[str, Any]:
         """
-        Procesa un PDF y lo convierte a Markdown usando Marker.
+        Convierte un archivo PDF a formato Markdown usando la herramienta Marker.
+        
+        Este método ejecuta el procesamiento completo de un PDF:
+        1. Valida que el archivo PDF existe
+        2. Configura directorio de salida
+        3. Ejecuta marker_single para la conversión
+        4. Retorna información del documento procesado
         
         Args:
-            pdf_path (str): Ruta al archivo PDF
-            output_dir (str): Directorio de salida (opcional)
-            
+            pdf_path (str): Ruta completa al archivo PDF a procesar
+            output_dir (str, optional): Directorio donde guardar el resultado. 
+                                      Si es None, usa un directorio temporal.
+                                      
         Returns:
-            Dict[str, Any]: Diccionario con información del documento procesado
+            Dict[str, Any]: Diccionario con información del procesamiento que incluye:
+                - 'success': bool indicando si el procesamiento fue exitoso
+                - 'markdown_path': str con la ruta al archivo Markdown generado
+                - 'pdf_path': str con la ruta del PDF original
+                - 'processing_time': float con el tiempo de procesamiento en segundos
+                - 'file_size': int con el tamaño del archivo PDF en bytes
+                - 'error': str con mensaje de error si 'success' es False
+                
+        Raises:
+            FileNotFoundError: Si el archivo PDF no existe
+            RuntimeError: Si marker_single falla en el procesamiento
+            PermissionError: Si no hay permisos para escribir en output_dir
+            
+        Example:
+            >>> processor = DocumentProcessor()
+            >>> result = processor.process_pdf_to_markdown("/path/to/doc.pdf")
+            >>> if result['success']:
+            ...     logger.info(f"Markdown generado en: {result['markdown_path']}")
         """
         pdf_path = Path(pdf_path)
         
