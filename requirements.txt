@@ -1,25 +1,27 @@
 # =============================================================================
-# DEPENDENCIAS PARA DESARROLLO LOCAL
+# DEPENDENCIAS PARA DESARROLLO LOCAL DE DRCECIM UPLOAD
 # =============================================================================
 
-# 1. Instala el paquete local 'drcecim_shared' y todas sus dependencias
-#    listadas en 'install_requires' dentro de setup.py.
-#    Esto te da acceso a los services, config, etc. en tu entorno local.
+# 1. Instala el paquete local 'drcecim_shared' con todas sus dependencias
+#    de producción listadas en 'install_requires' dentro de setup.py.
 -e .
 
+# 2. Dependencias adicionales para desarrollo completo
+#    Incluye herramientas de testing, linting, UI y procesamiento PDF
+-e .[all]
+
 # =============================================================================
-# HERRAMIENTAS DE DESARROLLO (NO SE INSTALAN EN PRODUCCIÓN)
+# ALTERNATIVAS PARA INSTALACIÓN ESPECÍFICA
 # =============================================================================
 
-# 2. Interfaz de Usuario para pruebas locales
-streamlit>=1.28.0
+# Para solo desarrollo y testing (sin UI ni Cloud Functions):
+# -e .[dev]
 
-# 3. Herramientas de Testing y Calidad de Código
-pytest>=7.4.0
-pytest-cov>=4.1.0
-pytest-mock>=3.11.0
-coverage>=7.3.0
-black>=23.0.0
-flake8>=6.0.0
-isort>=5.12.0
-mypy>=1.5.0
+# Para solo interfaz de usuario local:
+# -e .[ui]
+
+# Para desarrollo de Cloud Functions:
+# -e .[cloud]
+
+# Para procesamiento de PDF:
+# -e .[pdf]

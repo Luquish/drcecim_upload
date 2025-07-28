@@ -1,14 +1,17 @@
 # DrCecim Upload - Sistema de Procesamiento de Documentos
 
-Sistema completo para cargar, procesar y almacenar documentos PDF para el chatbot DrCecim de la Facultad de Medicina UBA.
+🤖 Sistema de carga y procesamiento de documentos PDF para el chatbot DrCecim de la Facultad de Medicina UBA.
 
-## 🏗️ Arquitectura del Sistema
+## 🎯 Descripción
+
+DrCecim Upload convierte documentos PDF en embeddings vectoriales para alimentar el sistema de RAG (Retrieval-Augmented Generation) del chatbot DrCecim. El sistema procesa automáticamente documentos, los convierte a texto usando Marker, genera embeddings con OpenAI y los almacena en Google Cloud Storage.
+
+## 🏗️ Arquitectura
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Streamlit     │    │  Cloud Function │    │  Google Cloud   │
-│   Frontend      │───▶│   Processing    │───▶│    Storage      │
-│                 │    │                 │    │                 │
+│   Streamlit     │───▶│  Cloud Function │───▶│  Google Cloud   │
+│   Frontend      │    │   Processing    │    │    Storage      │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
                                 │
                                 ▼
@@ -18,315 +21,216 @@ Sistema completo para cargar, procesar y almacenar documentos PDF para el chatbo
                        └─────────────────┘
 ```
 
-### Componentes Principales
+### Componentes
 
-1. **Streamlit Frontend** - Interfaz web para subir archivos PDF
-2. **Google Cloud Function** - Procesamiento serverless de documentos
-3. **Document Processor** - Convierte PDF a Markdown usando Marker
-4. **Embedding Service** - Genera embeddings usando OpenAI
-5. **GCS Service** - Almacena datos en Google Cloud Storage
-6. **OpenAI Integration** - API para generación de embeddings
+- **Frontend Streamlit**: Interfaz web para subida de PDFs
+- **Document Processor**: Convierte PDF a Markdown con Marker
+- **Embedding Service**: Genera embeddings usando OpenAI
+- **Cloud Functions**: Procesamiento serverless en Google Cloud
+- **Vector Store**: Almacenamiento en GCS con índices FAISS
 
-## 🚀 Características
+## 🚀 Instalación Rápida
 
-- ✅ **Procesamiento Automático**: PDF → Markdown → Chunks → Embeddings → GCS
-- ✅ **Interfaz Moderna**: Web UI con Streamlit
-- ✅ **Arquitectura Serverless**: Google Cloud Functions
-- ✅ **Almacenamiento Escalable**: Google Cloud Storage
-- ✅ **Embeddings de Calidad**: OpenAI text-embedding-3-small
-- ✅ **Búsqueda Vectorial**: Índices FAISS optimizados
-- ✅ **Monitoreo**: Logs y métricas integradas
-
-## 📁 Estructura del Proyecto
-
-```
-drcecim_upload/
-├── config/
-│   ├── __init__.py
-│   └── settings.py              # Configuración central
-├── services/
-│   ├── __init__.py
-│   ├── processing_service.py    # Procesamiento PDF
-│   ├── embeddings_service.py    # Generación embeddings
-│   └── gcs_service.py          # Google Cloud Storage
-├── models/
-│   ├── __init__.py
-│   ├── base_model.py           # Clase base
-│   └── openai_model.py         # Modelo OpenAI
-├── cloud_functions/
-│   ├── __init__.py
-│   ├── main.py                 # Cloud Function principal
-│   ├── requirements.txt        # Dependencias CF
-│   ├── deployment_config.yaml  # Configuración deployment
-│   └── deploy.sh              # Script de deployment
-├── utils/
-│   └── __init__.py
-├── .streamlit/
-│   ├── config.toml            # Configuración Streamlit
-│   └── secrets.toml           # Secrets (no commitear)
-├── streamlit_app.py           # Aplicación Streamlit
-├── requirements.txt           # Dependencias principales
-├── env.example               # Ejemplo variables entorno
-├── .gitignore               # Archivos a ignorar
-└── README.md               # Este archivo
-```
-
-## ⚙️ Instalación y Configuración
-
-### 1. Requisitos Previos
-
-- Python 3.11+
-- Google Cloud SDK (`gcloud`)
-- Cuenta de Google Cloud con facturación habilitada
+### 1. Requisitos
+- Python 3.9+
+- Google Cloud SDK
 - API Key de OpenAI
-- Marker PDF instalado (`pip install marker-pdf`)
 
-### 2. Configuración del Entorno
+### 2. Configuración
 
 ```bash
-# Clonar el repositorio
-git clone <repository-url>
+# Clonar repositorio
+git clone <repo-url>
 cd drcecim_upload
 
 # Crear entorno virtual
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
-# o
-venv\Scripts\activate     # Windows
 
 # Instalar dependencias
-pip install -r requirements.txt
-```
-
-### 3. Configuración de Variables de Entorno
-
-```bash
-# Copiar archivo de ejemplo
-cp env.example .env
-
-# Editar .env con tus valores
-nano .env
-```
-
-Variables requeridas:
-```bash
-# Google Cloud
-GCS_BUCKET_NAME=tu-bucket-name
-GCS_CREDENTIALS_PATH=path/to/credentials.json
-GCF_PROJECT_ID=tu-project-id
-GCF_REGION=us-central1
-
-# OpenAI
-OPENAI_API_KEY=tu-api-key
-EMBEDDING_MODEL=text-embedding-3-small
-
-# Procesamiento
-MAX_FILE_SIZE_MB=50
-CHUNK_SIZE=250
-CHUNK_OVERLAP=50
-```
-
-### 4. Configuración de Google Cloud
-
-```bash
-# Autenticarse con Google Cloud
-gcloud auth login
-
-# Configurar proyecto
-gcloud config set project tu-project-id
-
-# Crear bucket de GCS
-gsutil mb gs://tu-bucket-name
-
-# Habilitar APIs necesarias
-gcloud services enable cloudfunctions.googleapis.com
-gcloud services enable cloudbuild.googleapis.com
-gcloud services enable storage.googleapis.com
-```
-
-## 🚀 Deployment
-
-### 1. Desplegar Cloud Function
-
-```bash
-# Ir al directorio de Cloud Functions
-cd cloud_functions
+pip install -e .[all]
 
 # Configurar variables de entorno
-export OPENAI_API_KEY="tu-api-key"
-export GCS_BUCKET_NAME="tu-bucket-name"
-export GCF_PROJECT_ID="tu-project-id"
-
-# Ejecutar script de deployment
-./deploy.sh
+cp env.example .env
+# Editar .env con tus valores
 ```
 
-### 2. Configurar Streamlit
+### 3. Variables de Entorno Críticas
 
 ```bash
-# Editar secrets de Streamlit
-nano .streamlit/secrets.toml
+# Google Cloud (REQUERIDO)
+GCS_BUCKET_NAME=tu-bucket-name
+GCF_PROJECT_ID=tu-project-id
 
-# Agregar URL de la Cloud Function
-CLOUD_FUNCTION_URL = "https://us-central1-tu-project.cloudfunctions.net/drcecim-process-document"
+# OpenAI (REQUERIDO)
+OPENAI_API_KEY=sk-tu-api-key
+
+# Opcional
+GCS_CREDENTIALS_PATH=/path/to/service-account.json
 ```
 
-### 3. Ejecutar Streamlit
+### 4. Ejecutar
 
 ```bash
-# Ejecutar aplicación
+# Aplicación Streamlit
 streamlit run streamlit_app.py
+
+# Tests
+pytest
+
+# Linting
+pre-commit run --all-files
 ```
 
-## 📖 Uso
+## 📁 Estructura del Proyecto
 
-### 1. Subir Documento
-
-1. Abrir la aplicación Streamlit en `http://localhost:8501`
-2. Seleccionar un archivo PDF (máximo 50MB)
-3. Verificar que el archivo sea válido
-4. Hacer clic en "Procesar Documento"
-
-### 2. Monitorear Procesamiento
-
-El sistema mostrará el progreso en tiempo real:
-- 🔄 Convirtiendo PDF a Markdown
-- 🤖 Generando embeddings con OpenAI
-- ☁️ Subiendo datos a Google Cloud Storage
-
-### 3. Revisar Resultados
-
-Una vez completado, verás:
-- ✅ Estado del procesamiento
-- 📊 Estadísticas del documento
-- 📄 Información de chunks generados
-- ☁️ Archivos almacenados en GCS
+```
+drcecim_upload/
+├── config/              # Configuración centralizada
+├── services/            # Lógica de negocio
+├── models/              # Modelos de datos
+├── ui/                  # Interfaz Streamlit
+├── utils/               # Utilidades
+├── cloud_functions/     # Google Cloud Functions
+├── tests/               # Pruebas unitarias
+└── requirements.txt     # Dependencias
+```
 
 ## 🔧 Configuración Avanzada
 
 ### Personalizar Chunk Size
-
 ```python
-# En config/settings.py
-CHUNK_SIZE = 500  # Palabras por chunk
-CHUNK_OVERLAP = 100  # Solapamiento entre chunks
-```
-
-### Configurar Memory/Timeout de Cloud Function
-
-```bash
-# En cloud_functions/deploy.sh
-MEMORY="2048Mi"
-TIMEOUT="900s"  # 15 minutos
+# En .env
+CHUNK_SIZE=500
+CHUNK_OVERLAP=100
 ```
 
 ### Cambiar Modelo de Embeddings
-
 ```python
-# En config/settings.py
-EMBEDDING_MODEL = "text-embedding-3-large"  # Más preciso, más caro
+# En .env
+EMBEDDING_MODEL=text-embedding-3-large
 ```
 
-## 📊 Monitoreo y Logs
+### Cloud Functions
+```bash
+cd cloud_functions
+./deploy_event_driven.sh
+```
 
-### Cloud Function Logs
+## 🚢 Deployment
+
+### Google Cloud Setup
+```bash
+# Autenticar
+gcloud auth login
+
+# Crear bucket
+gsutil mb gs://tu-bucket-name
+
+# Habilitar APIs
+gcloud services enable cloudfunctions.googleapis.com
+gcloud services enable storage.googleapis.com
+```
+
+### Streamlit Cloud
+Configura `secrets.toml` con las variables de entorno requeridas.
+
+## 🧪 Testing
 
 ```bash
-# Ver logs de la función
-gcloud functions logs read drcecim-process-document --region=us-central1
+# Ejecutar todos los tests
+pytest
+
+# Con coverage
+pytest --cov=services --cov=config --cov=models
+
+# Tests específicos
+pytest tests/test_processing_service.py
 ```
 
-### Streamlit Logs
-
-Los logs aparecen en la terminal donde ejecutas Streamlit.
-
-### Google Cloud Storage
-
-```bash
-# Listar archivos procesados
-gsutil ls gs://tu-bucket-name/embeddings/
-gsutil ls gs://tu-bucket-name/metadata/
-```
-
-## 🐛 Troubleshooting
-
-### Problemas Comunes
-
-1. **Error de autenticación de Google Cloud**
-   ```bash
-   gcloud auth application-default login
-   ```
-
-2. **Timeout en Cloud Function**
-   - Aumentar timeout en deploy.sh
-   - Verificar tamaño del archivo PDF
-
-3. **Error de API Key de OpenAI**
-   - Verificar que la API Key sea válida
-   - Revisar límites de uso
-
-4. **Marker PDF no funciona**
-   ```bash
-   pip install marker-pdf
-   # Verificar que marker_single esté en PATH
-   ```
-
-### Logs Útiles
+## 📊 Monitoreo
 
 ```bash
 # Logs de Cloud Function
 gcloud functions logs read drcecim-process-document
 
-# Logs de Cloud Build
-gcloud builds log <BUILD_ID>
-
-# Status de APIs
-gcloud services list --enabled
+# Status de archivos procesados
+python -c "from services.status_service import StatusService; print(StatusService().get_all_documents())"
 ```
 
 ## 🔒 Seguridad
 
-### Variables Sensibles
+- ✅ Rate limiting automático para OpenAI
+- ✅ Validación robusta de API keys
+- ✅ Pre-commit hooks para security scanning
+- ✅ Secrets management con Google Secret Manager
+- ✅ Validación de uploads de archivos
 
-- ❌ **Nunca commites** archivos `.env` o `secrets.toml`
-- ✅ **Usa** service accounts para producción
-- ✅ **Restringe** acceso a buckets de GCS
-- ✅ **Rota** API keys regularmente
+## 🤝 Desarrollo
 
-### Acceso a Cloud Function
-
+### Setup para Desarrollo
 ```bash
-# Restringir acceso (para producción)
-gcloud functions deploy drcecim-process-document \
-  --no-allow-unauthenticated
+# Instalar dependencias de desarrollo
+pip install -e .[dev]
+
+# Configurar pre-commit
+pre-commit install
+
+# Ejecutar linting
+black .
+isort .
+flake8 .
 ```
 
-## 🤝 Contribuir
+### Estructura de Dependencias
+- **Producción**: Solo dependencias core
+- **UI**: + Streamlit
+- **Dev**: + Testing, linting, security tools
+- **Cloud**: + Functions framework
+- **PDF**: + Marker para procesamiento PDF
 
-1. Fork el repositorio
-2. Crear feature branch (`git checkout -b feature/nueva-funcionalidad`)
-3. Commit cambios (`git commit -am 'Agregar nueva funcionalidad'`)
-4. Push branch (`git push origin feature/nueva-funcionalidad`)
-5. Crear Pull Request
+## 🐛 Troubleshooting
 
-## 📚 Documentación Adicional
+### Problemas Comunes
 
-- [Google Cloud Functions](https://cloud.google.com/functions/docs)
-- [Streamlit Documentation](https://docs.streamlit.io/)
-- [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
-- [Marker PDF](https://github.com/VikParuchuri/marker)
-- [FAISS Documentation](https://github.com/facebookresearch/faiss)
+**Error de autenticación GCP**
+```bash
+gcloud auth application-default login
+```
 
-## 📝 Licencia
+**Marker PDF no funciona**
+```bash
+pip install marker-pdf
+```
 
-Este proyecto está bajo la licencia MIT. Ver `LICENSE` para más detalles.
+**Rate limit de OpenAI**
+- Configurar `OPENAI_RATE_LIMIT` en `.env`
+- Verificar límites en tu cuenta OpenAI
 
-## 🆘 Soporte
+### Logs Útiles
+```bash
+# Cloud Function logs
+gcloud functions logs read drcecim-process-document --region=us-central1
 
-Para soporte técnico:
-- 📧 Email: tu-email@dominio.com
-- 💬 Issues: GitHub Issues
-- 📚 Wiki: GitHub Wiki
+# Streamlit logs
+# Aparecen en la terminal donde ejecutas streamlit
+```
+
+## 📚 Documentación
+
+- [Configuración detallada](docs/configuration.md)
+- [API Reference](docs/api.md)
+- [Deployment Guide](docs/deployment.md)
+
+## 📝 Changelog
+
+### v1.0.0
+- ✅ Refactorización completa con arquitectura modular
+- ✅ Rate limiting para OpenAI
+- ✅ Validaciones robustas de configuración
+- ✅ Tests mejorados con cleanup apropiado
+- ✅ Pre-commit hooks para calidad de código
+- ✅ Documentación simplificada
 
 ---
 
