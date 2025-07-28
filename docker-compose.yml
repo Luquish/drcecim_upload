@@ -1,0 +1,94 @@
+services:
+  drcecim-upload:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      # Variables de entorno básicas
+      - ENVIRONMENT=development
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      
+      # Configuración de Streamlit
+      - STREAMLIT_TITLE=DrCecim - Carga de Documentos
+      - STREAMLIT_DESCRIPTION=Sistema de carga y procesamiento de documentos PDF
+      - MAX_FILE_SIZE_MB=50
+      - HOST=0.0.0.0
+      - PORT=8501
+      
+      # Configuración de procesamiento
+      - CHUNK_SIZE=250
+      - CHUNK_OVERLAP=50
+      - TEMP_DIR=/app/temp
+      - PROCESSED_DIR=/app/data/processed
+      - EMBEDDINGS_DIR=/app/data/embeddings
+      - DEVICE=cpu
+      
+      # Configuración de OpenAI (especificar en archivo .env)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - API_TIMEOUT=60
+      - MAX_OUTPUT_TOKENS=2048
+      - TEMPERATURE=0.7
+      - TOP_P=1.0
+      
+      # Configuración de Google Cloud (especificar en archivo .env)
+      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
+      - GCF_PROJECT_ID=${GCF_PROJECT_ID}
+      - GCF_REGION=${GCF_REGION:-us-central1}
+      - GCS_CREDENTIALS_PATH=${GCS_CREDENTIALS_PATH}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account.json
+      
+      # URLs de Cloud Functions (actualizar después del deployment)
+      - CLOUD_FUNCTION_URL=${CLOUD_FUNCTION_URL}
+      - EMBEDDINGS_FUNCTION_URL=${EMBEDDINGS_FUNCTION_URL}
+      
+      # Configuración de límites
+      - OPENAI_RATE_LIMIT=50
+      - EMBEDDING_BATCH_SIZE=16
+      - PROCESSING_TIMEOUT=900
+      
+      # Configuración de monitoreo
+      - ENABLE_MONITORING=true
+      - MONITORING_INTERVAL=60
+      
+      # Prefijos de GCS
+      - GCS_EMBEDDINGS_PREFIX=embeddings/
+      - GCS_METADATA_PREFIX=metadata/
+      - GCS_PROCESSED_PREFIX=processed/
+      - GCS_TEMP_PREFIX=temp/
+      
+      # Nombres de archivos en GCS
+      - GCS_FAISS_INDEX_NAME=faiss_index.bin
+      - GCS_METADATA_NAME=metadata.csv
+      - GCS_CONFIG_NAME=config.json
+    
+    volumes:
+      # Volumen para datos persistentes
+      - drcecim_data:/app/data
+      - drcecim_logs:/app/logs
+      - drcecim_temp:/app/temp
+      # Montar credenciales de Google Cloud si están disponibles localmente
+      - ./service-account.json:/app/credentials/service-account.json:ro
+    
+    env_file:
+      - .env
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  drcecim_data:
+    driver: local
+  drcecim_logs:
+    driver: local
+  drcecim_temp:
+    driver: local 

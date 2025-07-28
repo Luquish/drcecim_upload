@@ -38,6 +38,8 @@ class GoogleCloudSettings(BaseSettings):
 
     class Config:
         env_prefix = ''
+    
+
 
 
 class OpenAISettings(BaseSettings):
@@ -55,16 +57,7 @@ class OpenAISettings(BaseSettings):
     class Config:
         env_prefix = ''
 
-    @validator('openai_api_key')
-    def validate_api_key(cls, v):
-        if not v:
-            # Intentar obtener desde secrets service
-            try:
-                from services.secrets_service import config_manager
-                return config_manager.get_openai_api_key()
-            except ImportError:
-                return v
-        return v
+
 
 
 class ProcessingSettings(BaseSettings):
@@ -74,16 +67,18 @@ class ProcessingSettings(BaseSettings):
     chunk_size: int = Field(default=250, env='CHUNK_SIZE')
     chunk_overlap: int = Field(default=50, env='CHUNK_OVERLAP')
     
-    # Directorios
-    temp_dir: str = Field(default='/tmp/drcecim_processing', env='TEMP_DIR')
-    processed_dir: str = Field(default='data/processed', env='PROCESSED_DIR')
-    embeddings_dir: str = Field(default='data/embeddings', env='EMBEDDINGS_DIR')
+    # Directorios - usar rutas relativas más seguras por defecto
+    temp_dir: str = Field(default='./temp', env='TEMP_DIR')
+    processed_dir: str = Field(default='./data/processed', env='PROCESSED_DIR')
+    embeddings_dir: str = Field(default='./data/embeddings', env='EMBEDDINGS_DIR')
     
     # Configuración del dispositivo
     device: str = Field(default='cpu', env='DEVICE')
 
     class Config:
         env_prefix = ''
+
+
 
 
 class StreamlitSettings(BaseSettings):
@@ -143,11 +138,7 @@ class AppSettings(BaseSettings):
     class Config:
         env_prefix = ''
 
-    @validator('debug', pre=True)
-    def validate_debug(cls, v):
-        if isinstance(v, str):
-            return v.lower() == 'true'
-        return v
+
 
 
 class DrCecimConfig(BaseSettings):
