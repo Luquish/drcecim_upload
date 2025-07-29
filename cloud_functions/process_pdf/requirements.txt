@@ -3,20 +3,10 @@
 # =============================================================================
 
 # Functions Framework (requerido para Cloud Functions)
-functions-framework>=3.4.0,<3.6.0
+functions-framework>=3.4.0
 
 # Procesamiento de PDF
-marker-pdf>=0.2.0,<0.3.0
+marker-pdf>=0.2.0
 
-# Web framework (compatibilidad con Cloud Functions)
-flask>=2.0.0,<3.1.0
-werkzeug>=2.0.0,<3.1.0
-
-# Sistema de archivos y utilitades
-pathlib2>=2.3.7,<2.4.0
-
-# Paquete local compartido con dependencias core
--e ../..
-
-# Dependencias adicionales para Cloud Functions
-google-cloud-logging>=3.5.0,<3.10.0
+# Incluir dependencias comunes
+-r ../common/requirements.txt

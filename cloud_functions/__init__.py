@@ -1,3 +1,3 @@
 """
-Módulo de Cloud Functions para el sistema DrCecim Upload.
+Módulo de configuración para el sistema DrCecim Upload.
 """ 

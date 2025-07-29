@@ -1,9 +1,6 @@
 """
 Google Cloud Function para procesar documentos PDF a chunks de texto.
 Se activa cuando se sube un archivo PDF al bucket de entrada.
-
-Esta función es parte de la arquitectura orientada a eventos que divide el
-procesamiento en dos etapas para mejorar la robustez y escalabilidad.
 """
 import os
 import json
@@ -14,63 +11,112 @@ from typing import Dict, Any, Optional
 
 import functions_framework
 from google.cloud import storage
+import marker_pdf
 
-# Configurar logging usando el sistema estandarizado
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Importar configuración compartida
 try:
-    from config.logging_config import setup_production_logging, get_logger
-    setup_production_logging()
-    logger = get_logger(__name__)
+    from common.config import get_config, get_gcs_config
+    config = get_config()
+    gcs_config = get_gcs_config()
 except ImportError:
-    # Fallback si no está disponible el sistema de logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+    # Fallback: usar variables de entorno directamente
+    config = {
+        'project_id': os.getenv('GCF_PROJECT_ID'),
+        'bucket_name': os.getenv('GCS_BUCKET_NAME'),
+        'region': os.getenv('GCF_REGION', 'us-central1'),
+        'environment': os.getenv('ENVIRONMENT', 'production'),
+        'log_level': os.getenv('LOG_LEVEL', 'INFO')
+    }
+    gcs_config = {
+        'processed_prefix': 'processed/',
+        'embeddings_prefix': 'embeddings/',
+        'temp_prefix': 'temp/'
+    }
 
-# Importar nuestros servicios (ahora como paquete instalado)
-try:
-    from services.processing_service import DocumentProcessor
-    from services.gcs_service import GCSService
-    from services.status_service import StatusService, DocumentStatus
-    from utils.monitoring import get_logger, get_processing_monitor, log_system_info
-    from utils.temp_file_manager import temp_dir
-    from utils.resource_managers import document_processing_context
-except ImportError as e:
-    logger.error(f"Error al importar módulos: {str(e)}")
-    raise
-
-# Inicializar monitoreo
-app_logger = get_logger("process_pdf_function")
-processing_monitor = get_processing_monitor()
-
-# Log información del sistema al inicio
-log_system_info()
+# Configurar parámetros de procesamiento
+CHUNK_SIZE = int(os.getenv('CHUNK_SIZE', '250'))
+CHUNK_OVERLAP = int(os.getenv('CHUNK_OVERLAP', '50'))
 
 
 def is_pdf_file(file_name: str) -> bool:
-    """
-    Verifica si el archivo es un PDF.
-    
-    Args:
-        file_name (str): Nombre del archivo
-        
-    Returns:
-        bool: True si es un PDF
-    """
+    """Verifica si el archivo es un PDF."""
     return file_name.lower().endswith('.pdf')
 
 
-def cleanup_temp_files(temp_path: str) -> None:
-    """
-    Limpia archivos temporales.
-    
-    Args:
-        temp_path (str): Ruta del archivo temporal
-    """
+def extract_text_from_pdf(pdf_path: str) -> str:
+    """Extrae texto de un archivo PDF usando marker-pdf."""
     try:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-            logger.info(f"Archivo temporal eliminado: {temp_path}")
+        with open(pdf_path, 'rb') as file:
+            doc = marker_pdf.Pdf(file.read())
+            return doc.text()
     except Exception as e:
-        logger.error(f"Error al eliminar archivo temporal: {str(e)}")
+        logger.error(f"Error al extraer texto del PDF: {str(e)}")
+        raise
+
+
+def create_chunks(text: str, chunk_size: int = 250, chunk_overlap: int = 50) -> list:
+    """Divide el texto en chunks."""
+    if not text:
+        return []
+    
+    words = text.split()
+    chunks = []
+    
+    for i in range(0, len(words), chunk_size - chunk_overlap):
+        chunk_words = words[i:i + chunk_size]
+        chunk_text = ' '.join(chunk_words)
+        if chunk_text.strip():
+            chunks.append({
+                'text': chunk_text,
+                'start_word': i,
+                'end_word': min(i + chunk_size, len(words)),
+                'word_count': len(chunk_words)
+            })
+    
+    return chunks
+
+
+def process_pdf_document(pdf_path: str, filename: str) -> Dict:
+    """Procesa un documento PDF completo."""
+    try:
+        # Extraer texto
+        text = extract_text_from_pdf(pdf_path)
+        
+        # Crear chunks
+        chunks = create_chunks(text, CHUNK_SIZE, CHUNK_OVERLAP)
+        
+        # Preparar resultado
+        result = {
+            'filename': filename,
+            'chunks': chunks,
+            'num_chunks': len(chunks),
+            'total_words': len(text.split()),
+            'processing_timestamp': str(Path(pdf_path).stat().st_mtime),
+            'processed_successfully': True,
+            'metadata': {
+                'chunk_size': CHUNK_SIZE,
+                'chunk_overlap': CHUNK_OVERLAP,
+                'total_text_length': len(text)
+            }
+        }
+        
+        logger.info(f"PDF procesado exitosamente: {len(chunks)} chunks creados")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error procesando PDF: {str(e)}")
+        return {
+            'filename': filename,
+            'chunks': [],
+            'num_chunks': 0,
+            'total_words': 0,
+            'processed_successfully': False,
+            'error': str(e)
+        }
 
 
 @functions_framework.cloud_event
@@ -78,12 +124,9 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
     """
     Cloud Function que se activa por eventos de Cloud Storage.
     Procesa PDFs y genera chunks de texto.
-    
-    Args:
-        cloud_event: Evento de Cloud Storage
     """
     try:
-        # Extraer y validar información del evento
+        # Extraer información del evento
         if not hasattr(cloud_event, 'data') or not cloud_event.data:
             raise ValueError("Evento de Cloud Storage inválido: sin datos")
         
@@ -93,142 +136,65 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
         event_type = event_data.get('eventType')
         
         # Validar datos del evento
-        if not bucket_name:
-            raise ValueError("Nombre de bucket faltante en el evento")
-        if not file_name:
-            raise ValueError("Nombre de archivo faltante en el evento")
-        if not event_type:
-            raise ValueError("Tipo de evento faltante")
+        if not bucket_name or not file_name or not event_type:
+            raise ValueError("Datos del evento incompletos")
         
-        app_logger.info(f"Evento recibido: {event_type} para archivo: {file_name}")
+        logger.info(f"Evento recibido: {event_type} para archivo: {file_name}")
         
         # Verificar que sea un evento de creación/actualización
         if 'finalize' not in event_type:
-            app_logger.info(f"Ignorando evento {event_type}")
+            logger.info(f"Ignorando evento {event_type}")
             return
         
         # Verificar que sea un archivo PDF
         if not is_pdf_file(file_name):
-            app_logger.info(f"Ignorando archivo no-PDF: {file_name}")
+            logger.info(f"Ignorando archivo no-PDF: {file_name}")
             return
         
-        # Iniciar monitoreo de procesamiento
-        session_id = processing_monitor.start_processing(file_name)
-        app_logger.info(f"Iniciando procesamiento de PDF: {file_name}", {'session_id': session_id})
+        # Inicializar cliente de Storage
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(file_name)
         
-        # Registrar documento en el servicio de estado
-        status_service = StatusService()
-        document_id = status_service.register_document(file_name)
-        status_service.update_status(
-            document_id, 
-            DocumentStatus.PROCESSING, 
-            "Iniciando procesamiento de PDF",
-            "pdf_processing_start"
-        )
-        
-        # Usar context manager para manejo seguro de recursos y archivos temporales
-        with temp_dir(prefix='drcecim_pdf_') as session_temp_dir:
-            # Inicializar servicio GCS
-            gcs_service = GCSService(bucket_name=bucket_name)
+        # Crear directorio temporal
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_file_path = Path(temp_dir) / Path(file_name).name
             
             # Descargar archivo PDF
-            app_logger.info("Descargando PDF desde GCS", {'session_id': session_id})
-            temp_file_path = session_temp_dir / Path(file_name).name
-            gcs_service.download_file(file_name, str(temp_file_path))
+            logger.info(f"Descargando PDF: {file_name}")
+            blob.download_to_filename(str(temp_file_path))
             
-            processing_monitor.log_step(session_id, "pdf_downloaded", {'temp_path': temp_file_path})
-            status_service.update_status(
-                document_id, 
-                DocumentStatus.PROCESSING, 
-                "PDF descargado, iniciando conversión a texto",
-                "pdf_downloaded"
-            )
+            # Procesar PDF
+            logger.info(f"Procesando PDF: {file_name}")
+            result = process_pdf_document(str(temp_file_path), file_name)
             
-            # Procesar PDF a chunks
-            app_logger.info("Procesando PDF con DocumentProcessor", {'session_id': session_id})
-            processing_monitor.log_step(session_id, "pdf_processing_started")
-            
-            doc_processor = DocumentProcessor(str(session_temp_dir))
-            processed_doc = doc_processor.process_document_complete(str(temp_file_path))
-            
-            if not processed_doc.get('processed_successfully', False):
-                error_msg = processed_doc.get('error', 'Error desconocido en el procesamiento')
-                app_logger.error(f"Error en procesamiento: {error_msg}", {'session_id': session_id})
-                processing_monitor.finish_processing(session_id, success=False, error_message=error_msg)
-                status_service.update_status(
-                    document_id, 
-                    DocumentStatus.ERROR, 
-                    f"Error en procesamiento: {error_msg}",
-                    "processing_error"
-                )
+            if not result.get('processed_successfully', False):
+                logger.error(f"Error procesando PDF: {result.get('error', 'Error desconocido')}")
                 return
             
-            processing_monitor.log_step(session_id, "pdf_processing_completed", {
-                'num_chunks': processed_doc.get('num_chunks', 0),
-                'total_words': processed_doc.get('total_words', 0)
-            })
-            status_service.update_status(
-                document_id, 
-                DocumentStatus.PROCESSING, 
-                f"PDF convertido exitosamente. Generados {processed_doc.get('num_chunks', 0)} chunks",
-                "pdf_processing_completed",
-                metadata={
-                    'num_chunks': processed_doc.get('num_chunks', 0),
-                    'total_words': processed_doc.get('total_words', 0)
-                }
-            )
-            
-            # Preparar datos para subir al bucket intermedio
+            # Preparar datos para subir
             chunks_data = {
-                'filename': processed_doc['filename'],
-                'chunks': processed_doc['chunks'],
-                'metadata': processed_doc['metadata'],
-                'num_chunks': processed_doc['num_chunks'],
-                'total_words': processed_doc['total_words'],
-                'processing_timestamp': processed_doc.get('processing_timestamp'),
+                'filename': result['filename'],
+                'chunks': result['chunks'],
+                'metadata': result['metadata'],
+                'num_chunks': result['num_chunks'],
+                'total_words': result['total_words'],
+                'processing_timestamp': result['processing_timestamp'],
                 'source_file': file_name
             }
             
-            # Subir chunks procesados al bucket intermedio
+            # Subir chunks procesados
             chunks_filename = f"{Path(file_name).stem}_chunks.json"
-            chunks_gcs_path = f"{GCS_PROCESSED_PREFIX}{chunks_filename}"
+            chunks_gcs_path = f"{gcs_config['processed_prefix']}{chunks_filename}"
             
-            app_logger.info("Subiendo chunks procesados a GCS", {'session_id': session_id})
-            processing_monitor.log_step(session_id, "chunks_upload_started")
-            
-            chunks_json = json.dumps(chunks_data, ensure_ascii=False, indent=2)
-            upload_success = gcs_service.upload_string(
-                chunks_json, 
-                chunks_gcs_path, 
+            logger.info(f"Subiendo chunks a: {chunks_gcs_path}")
+            chunks_blob = bucket.blob(chunks_gcs_path)
+            chunks_blob.upload_from_string(
+                json.dumps(chunks_data, ensure_ascii=False, indent=2),
                 content_type='application/json'
             )
             
-            if upload_success:
-                processing_monitor.log_step(session_id, "chunks_upload_completed", {
-                    'chunks_file': chunks_gcs_path
-                })
-                processing_monitor.finish_processing(session_id, success=True)
-                status_service.update_status(
-                    document_id, 
-                    DocumentStatus.COMPLETED, 
-                    f"Documento procesado exitosamente. Chunks guardados en: {chunks_gcs_path}",
-                    "processing_completed",
-                    metadata={'chunks_file': chunks_gcs_path}
-                )
-                app_logger.info(
-                    f"PDF procesado exitosamente. Chunks guardados en: {chunks_gcs_path}",
-                    {'session_id': session_id}
-                )
-            else:
-                error_msg = "Error al subir chunks a GCS"
-                app_logger.error(error_msg, {'session_id': session_id})
-                processing_monitor.finish_processing(session_id, success=False, error_message=error_msg)
-                status_service.update_status(
-                    document_id, 
-                    DocumentStatus.ERROR, 
-                    error_msg,
-                    "upload_error"
-                )
+            logger.info(f"PDF procesado exitosamente. Chunks guardados en: {chunks_gcs_path}")
     
     except Exception as e:
         logger.error(f"Error en process_pdf_to_chunks: {str(e)}")
@@ -237,9 +203,7 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
 
 @functions_framework.http
 def health_check(request):
-    """
-    Endpoint de health check para la función.
-    """
+    """Endpoint de health check para la función."""
     return {
         'status': 'healthy',
         'function': 'process_pdf_to_chunks',

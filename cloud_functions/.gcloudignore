@@ -92,7 +92,6 @@ tests/
 test_*.py
 
 # Development files
-.gcloudignore
 deployment_config.yaml
 deploy.sh
 
@@ -103,7 +102,6 @@ embeddings/
 raw/
 
 # Credentials (importante)
-*.json
 credentials.json
 service-account-key.json
 

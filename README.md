@@ -66,7 +66,7 @@ GCF_PROJECT_ID=tu-project-id
 OPENAI_API_KEY=sk-tu-api-key
 
 # Opcional
-GCS_CREDENTIALS_PATH=/path/to/service-account.json
+GCS_CREDENTIALS_PATH=./cloud_functions/credentials/service-account.json
 ```
 
 ### 4. Ejecutar

@@ -49,42 +49,13 @@ class GCSService:
         if not self.bucket_name:
             raise ValueError("Se requiere el nombre del bucket de GCS (GCS_BUCKET_NAME)")
         
-        # Configurar credenciales para diferentes entornos
-        # 1. Desarrollo local: Usar archivo de credenciales
-        # 2. Streamlit Cloud: Usar credenciales JSON en variable de entorno
-        # 3. Cloud Functions: Usar cuenta de servicio automática
-        
-        credentials_configured = False
-        
-        # Verificar si hay credenciales JSON en variable de entorno (Streamlit Cloud)
-        gcs_credentials_json = os.getenv('GCS_CREDENTIALS_JSON')
-        if gcs_credentials_json:
-            try:
-                import tempfile
-                import json
-                
-                # Crear archivo temporal con las credenciales
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                    json.dump(json.loads(gcs_credentials_json), f)
-                    temp_credentials_path = f.name
-                
-                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_credentials_path
-                logger.info("Credenciales configuradas desde variable de entorno GCS_CREDENTIALS_JSON")
-                credentials_configured = True
-                
-            except Exception as e:
-                logger.warning(f"No se pudieron configurar credenciales desde GCS_CREDENTIALS_JSON: {e}")
-        
-        # Si no hay credenciales JSON, intentar con archivo local
-        if not credentials_configured and self.credentials_path and os.path.exists(self.credentials_path):
+        # Configurar credenciales (opcional para desarrollo local)
+        # En producción (Cloud Functions/Cloud Run) usar la cuenta de servicio asignada
+        if self.credentials_path and os.path.exists(self.credentials_path):
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = self.credentials_path
             logger.info(f"Credenciales configuradas desde archivo: {self.credentials_path}")
-            credentials_configured = True
-        
-        # Si no hay credenciales configuradas, usar ADC (Application Default Credentials)
-        if not credentials_configured:
+        else:
             logger.info("Usando credenciales por defecto (ADC - Application Default Credentials)")
-            logger.info("Para Streamlit Cloud, configura GCS_CREDENTIALS_JSON en los secretos")
         
         # Inicializar cliente de GCS
         try:

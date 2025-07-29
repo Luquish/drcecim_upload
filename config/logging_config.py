@@ -1,183 +1,109 @@
 """
-Configuración centralizada de logging para el sistema DrCecim Upload.
+Configuración de logging específica para la aplicación Streamlit.
 """
 import logging
-import logging.config
+import logging.handlers
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
-from datetime import datetime
+from typing import Optional
+
+from config.settings import LOG_LEVEL, LOG_FORMAT, ENVIRONMENT
 
 
-def get_logging_config(
-    log_level: str = "INFO",
-    log_dir: Optional[Path] = None,
-    enable_file_logging: bool = True,
-    enable_console_logging: bool = True,
-    log_format: Optional[str] = None
-) -> Dict[str, Any]:
+def setup_streamlit_logging(
+    log_level: str = LOG_LEVEL,
+    log_format: str = LOG_FORMAT,
+    log_file: Optional[str] = None,
+    max_bytes: int = 10 * 1024 * 1024,  # 10MB
+    backup_count: int = 5
+) -> logging.Logger:
     """
-    Genera configuración de logging estandarizada.
+    Configura el sistema de logging para la aplicación Streamlit.
     
     Args:
-        log_level: Nivel de logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_dir: Directorio para archivos de log
-        enable_file_logging: Si habilitar logging a archivo
-        enable_console_logging: Si habilitar logging a consola
-        log_format: Formato personalizado de logs
+        log_level (str): Nivel de logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_format (str): Formato de los mensajes de log
+        log_file (Optional[str]): Ruta al archivo de log (opcional)
+        max_bytes (int): Tamaño máximo del archivo de log antes de rotar
+        backup_count (int): Número de archivos de backup a mantener
         
     Returns:
-        Dict: Configuración para logging.config.dictConfig
+        logging.Logger: Logger configurado
     """
-    if log_dir is None:
-        log_dir = Path("logs")
     
-    log_dir.mkdir(exist_ok=True)
+    # Crear logger principal
+    logger = logging.getLogger("streamlit_app")
+    logger.setLevel(getattr(logging, log_level.upper()))
     
-    if log_format is None:
-        log_format = "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
+    # Limpiar handlers existentes para evitar duplicados
+    logger.handlers.clear()
     
-    # Archivos de log con timestamp
-    timestamp = datetime.now().strftime("%Y%m%d")
-    app_log_file = log_dir / f"drcecim_upload_{timestamp}.log"
-    error_log_file = log_dir / f"drcecim_upload_errors_{timestamp}.log"
+    # Crear formatter
+    formatter = logging.Formatter(log_format)
     
-    config = {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "detailed": {
-                "format": log_format,
-                "datefmt": "%Y-%m-%d %H:%M:%S"
-            },
-            "simple": {
-                "format": "%(levelname)s - %(message)s"
-            },
-            "json": {
-                "format": "%(asctime)s %(name)s %(levelname)s %(funcName)s %(lineno)d %(message)s",
-                "datefmt": "%Y-%m-%d %H:%M:%S"
-            }
-        },
-        "handlers": {},
-        "loggers": {
-            "": {  # Root logger
-                "level": log_level,
-                "handlers": []
-            },
-            "services": {
-                "level": log_level,
-                "handlers": [],
-                "propagate": False
-            },
-            "config": {
-                "level": log_level,
-                "handlers": [],
-                "propagate": False
-            },
-            "models": {
-                "level": log_level,
-                "handlers": [],
-                "propagate": False
-            },
-            "utils": {
-                "level": log_level,
-                "handlers": [],
-                "propagate": False
-            },
-            "cloud_functions": {
-                "level": log_level,
-                "handlers": [],
-                "propagate": False
-            }
-        }
-    }
+    # Handler para consola
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(getattr(logging, log_level.upper()))
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
     
-    handlers = []
-    
-    # Handler de consola
-    if enable_console_logging:
-        config["handlers"]["console"] = {
-            "class": "logging.StreamHandler",
-            "level": log_level,
-            "formatter": "detailed",
-            "stream": sys.stdout
-        }
-        handlers.append("console")
-    
-    # Handler de archivo para logs generales
-    if enable_file_logging:
-        config["handlers"]["file"] = {
-            "class": "logging.handlers.RotatingFileHandler",
-            "level": log_level,
-            "formatter": "detailed",
-            "filename": str(app_log_file),
-            "maxBytes": 10485760,  # 10MB
-            "backupCount": 5,
-            "encoding": "utf8"
-        }
-        handlers.append("file")
+    # Handler para archivo (si se especifica)
+    if log_file:
+        # Crear directorio de logs si no existe
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         
-        # Handler específico para errores
-        config["handlers"]["error_file"] = {
-            "class": "logging.handlers.RotatingFileHandler",
-            "level": "ERROR",
-            "formatter": "detailed",
-            "filename": str(error_log_file),
-            "maxBytes": 10485760,  # 10MB
-            "backupCount": 5,
-            "encoding": "utf8"
-        }
-        handlers.append("error_file")
+        # Handler rotativo para archivo
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding='utf-8'
+        )
+        file_handler.setLevel(getattr(logging, log_level.upper()))
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
     
-    # Asignar handlers a todos los loggers
-    for logger_name in config["loggers"]:
-        config["loggers"][logger_name]["handlers"] = handlers
+    # Configurar logging para bibliotecas externas
+    _setup_external_logging(log_level)
     
-    return config
+    logger.info(f"Logging configurado para Streamlit - Nivel: {log_level}")
+    return logger
 
 
-def setup_logging(
-    log_level: str = "INFO",
-    log_dir: Optional[Path] = None,
-    enable_file_logging: bool = True,
-    enable_console_logging: bool = True,
-    log_format: Optional[str] = None
-) -> None:
+def _setup_external_logging(log_level: str) -> None:
     """
-    Configura el sistema de logging.
+    Configura el logging para bibliotecas externas.
     
     Args:
-        log_level: Nivel de logging
-        log_dir: Directorio para archivos de log
-        enable_file_logging: Si habilitar logging a archivo
-        enable_console_logging: Si habilitar logging a consola
-        log_format: Formato personalizado de logs
+        log_level (str): Nivel de logging
     """
-    config = get_logging_config(
-        log_level=log_level,
-        log_dir=log_dir,
-        enable_file_logging=enable_file_logging,
-        enable_console_logging=enable_console_logging,
-        log_format=log_format
-    )
+    # Configurar logging para bibliotecas específicas
+    external_loggers = [
+        "streamlit",
+        "google.cloud",
+        "openai",
+        "urllib3",
+        "requests"
+    ]
     
-    logging.config.dictConfig(config)
-    
-    # Log inicial de configuración
-    logger = logging.getLogger(__name__)
-    logger.info("Sistema de logging configurado")
-    logger.info(f"Nivel de logging: {log_level}")
-    logger.info(f"Directorio de logs: {log_dir}")
-    logger.info(f"Logging a archivo: {enable_file_logging}")
-    logger.info(f"Logging a consola: {enable_console_logging}")
+    for logger_name in external_loggers:
+        external_logger = logging.getLogger(logger_name)
+        external_logger.setLevel(getattr(logging, log_level.upper()))
+        
+        # Evitar propagación duplicada
+        if not external_logger.handlers:
+            handler = logging.StreamHandler(sys.stdout)
+            handler.setFormatter(logging.Formatter(LOG_FORMAT))
+            external_logger.addHandler(handler)
 
 
-def get_logger(name: str) -> logging.Logger:
+def get_streamlit_logger(name: str = "streamlit_app") -> logging.Logger:
     """
-    Obtiene un logger configurado.
+    Obtiene un logger configurado para la aplicación Streamlit.
     
     Args:
-        name: Nombre del logger
+        name (str): Nombre del logger
         
     Returns:
         logging.Logger: Logger configurado
@@ -185,66 +111,44 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-class StructuredLogger:
-    """Logger con soporte para logging estructurado."""
+def log_streamlit_event(event_type: str, details: dict, logger: Optional[logging.Logger] = None) -> None:
+    """
+    Registra eventos específicos de Streamlit.
     
-    def __init__(self, name: str):
-        """
-        Inicializa el logger estructurado.
-        
-        Args:
-            name: Nombre del logger
-        """
-        self.logger = logging.getLogger(name)
+    Args:
+        event_type (str): Tipo de evento (upload, process, error, etc.)
+        details (dict): Detalles del evento
+        logger (Optional[logging.Logger]): Logger a usar (opcional)
+    """
+    if logger is None:
+        logger = get_streamlit_logger()
     
-    def log_structured(self, level: str, message: str, **kwargs) -> None:
-        """
-        Log estructurado con contexto adicional.
-        
-        Args:
-            level: Nivel de log
-            message: Mensaje principal
-            **kwargs: Contexto adicional
-        """
-        extra = {"structured_data": kwargs}
-        log_method = getattr(self.logger, level.lower())
-        log_method(message, extra=extra)
-    
-    def info(self, message: str, **kwargs) -> None:
-        """Log de nivel INFO."""
-        self.log_structured("INFO", message, **kwargs)
-    
-    def warning(self, message: str, **kwargs) -> None:
-        """Log de nivel WARNING."""
-        self.log_structured("WARNING", message, **kwargs)
-    
-    def error(self, message: str, **kwargs) -> None:
-        """Log de nivel ERROR."""
-        self.log_structured("ERROR", message, **kwargs)
-    
-    def debug(self, message: str, **kwargs) -> None:
-        """Log de nivel DEBUG."""
-        self.log_structured("DEBUG", message, **kwargs)
+    logger.info(f"STREAMLIT_EVENT: {event_type}", extra={
+        "event_type": event_type,
+        "details": details,
+        "environment": ENVIRONMENT
+    })
 
 
-# Configuración por defecto para desarrollo
-def setup_development_logging() -> None:
-    """Configura logging para desarrollo."""
-    setup_logging(
-        log_level="DEBUG",
-        log_dir=Path("logs"),
-        enable_file_logging=True,
-        enable_console_logging=True
-    )
+def log_streamlit_error(error: Exception, context: str = "", logger: Optional[logging.Logger] = None) -> None:
+    """
+    Registra errores específicos de Streamlit.
+    
+    Args:
+        error (Exception): Error a registrar
+        context (str): Contexto del error
+        logger (Optional[logging.Logger]): Logger a usar (opcional)
+    """
+    if logger is None:
+        logger = get_streamlit_logger()
+    
+    logger.error(f"STREAMLIT_ERROR: {context}", extra={
+        "error_type": type(error).__name__,
+        "error_message": str(error),
+        "context": context,
+        "environment": ENVIRONMENT
+    }, exc_info=True)
 
 
-# Configuración para producción
-def setup_production_logging() -> None:
-    """Configura logging para producción."""
-    setup_logging(
-        log_level="INFO",
-        log_dir=Path("/var/log/drcecim"),
-        enable_file_logging=True,
-        enable_console_logging=False,
-        log_format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    ) 
+# Configuración inicial
+streamlit_logger = setup_streamlit_logging()

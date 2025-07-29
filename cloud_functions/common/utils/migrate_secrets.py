@@ -16,7 +16,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Agregar el directorio padre al path para importar módulos
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from services.secrets_service import SecureConfigManager
 from config.settings import GCF_PROJECT_ID

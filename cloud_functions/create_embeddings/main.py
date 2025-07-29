@@ -13,17 +13,48 @@ from typing import Dict, Any
 
 import functions_framework
 
+# Importar configuración compartida
+try:
+    from common.config import get_config, get_gcs_config, get_openai_config
+    config = get_config()
+    gcs_config = get_gcs_config()
+    openai_config = get_openai_config()
+except ImportError:
+    # Fallback: usar variables de entorno directamente
+    config = {
+        'project_id': os.getenv('GCF_PROJECT_ID'),
+        'bucket_name': os.getenv('GCS_BUCKET_NAME'),
+        'region': os.getenv('GCF_REGION', 'us-central1'),
+        'environment': os.getenv('ENVIRONMENT', 'production'),
+        'log_level': os.getenv('LOG_LEVEL', 'INFO')
+    }
+    gcs_config = {
+        'embeddings_prefix': 'embeddings/',
+        'metadata_prefix': 'metadata/',
+        'processed_prefix': 'processed/',
+        'temp_prefix': 'temp/',
+        'faiss_index_name': 'faiss_index.bin',
+        'metadata_name': 'metadata.csv',
+        'metadata_summary_name': 'metadata_summary.csv',
+        'config_name': 'config.json'
+    }
+    openai_config = {
+        'api_key': os.getenv('OPENAI_API_KEY'),
+        'embedding_model': os.getenv('EMBEDDING_MODEL', 'text-embedding-3-small'),
+        'api_timeout': int(os.getenv('API_TIMEOUT', '30'))
+    }
+
 # Configurar logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Importar nuestros servicios (ahora como paquete instalado)
+# Importar nuestros servicios
 try:
-    from services.embeddings_service import EmbeddingService
-    from services.gcs_service import GCSService
-    from services.status_service import StatusService, DocumentStatus
-    from services.index_manager_service import IndexManagerService
-    from utils.monitoring import get_logger, get_processing_monitor, log_system_info
+    from common.services.embeddings_service import EmbeddingService
+    from common.services.gcs_service import GCSService
+    from common.services.status_service import StatusService, DocumentStatus
+    from common.services.index_manager_service import IndexManagerService
+    from common.utils.monitoring import get_logger, get_processing_monitor, log_system_info
     import openai
     from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 except ImportError as e:

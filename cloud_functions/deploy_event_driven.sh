@@ -30,6 +30,27 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Cargar configuración desde archivo .env
+load_config_from_env() {
+    print_message "Cargando configuración desde archivo .env..."
+    
+    # Verificar que existe el archivo .env
+    if [[ ! -f ".env" ]]; then
+        print_error "Archivo .env no encontrado en el directorio actual"
+        exit 1
+    fi
+    
+    # Cargar variables desde .env (excluyendo comentarios y líneas vacías)
+    while IFS='=' read -r key value; do
+        # Ignorar comentarios y líneas vacías
+        if [[ -n "$key" && ! "$key" =~ ^# && -n "$value" ]]; then
+            export "$key=$value"
+        fi
+    done < ".env"
+    
+    print_success "Configuración cargada exitosamente desde .env"
+}
+
 # Verificar variables de entorno requeridas
 check_required_vars() {
     print_message "Verificando variables de entorno..."
@@ -44,18 +65,21 @@ check_required_vars() {
         exit 1
     fi
     
+    if [[ -z "${OPENAI_API_KEY}" ]]; then
+        print_error "OPENAI_API_KEY no está configurado"
+        exit 1
+    fi
+    
     print_success "Variables de entorno verificadas"
 }
 
-# NOTA: Las funciones copy_shared_modules y cleanup_shared_modules
-# han sido eliminadas. Ahora el código compartido se instala automáticamente
-# como paquete Python a través de setup.py y la línea "-e ../.." en requirements.txt
+# Cargar configuración
+load_config_from_env
 
 # Configurar variables
-GCF_REGION=${GCF_REGION:-"us-central1"}
 ENTRY_BUCKET_NAME="${GCS_BUCKET_NAME}"
 PROCESSED_BUCKET_NAME="${GCS_BUCKET_NAME}"  # Mismo bucket, diferentes prefijos
-SERVICE_ACCOUNT="chatbot-pipeline-sa@${GCF_PROJECT_ID}.iam.gserviceaccount.com"
+SERVICE_ACCOUNT="data-pipeline-serviceaccount@${GCF_PROJECT_ID}.iam.gserviceaccount.com"
 
 print_message "==================================================================="
 print_message "DESPLEGANDO ARQUITECTURA ORIENTADA A EVENTOS PARA DRCECIM UPLOAD"
@@ -81,12 +105,11 @@ gcloud functions deploy process-pdf-to-chunks \
   --entry-point=process_pdf_to_chunks \
   --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
   --trigger-event-filters="bucket=${ENTRY_BUCKET_NAME}" \
-  --trigger-event-filters-path-pattern="*.pdf" \
   --service-account=${SERVICE_ACCOUNT} \
   --memory=1024MB \
   --timeout=540s \
   --max-instances=10 \
-  --set-env-vars="GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCF_PROJECT_ID=${GCF_PROJECT_ID},ENVIRONMENT=production" \
+  --set-env-vars="GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCF_PROJECT_ID=${GCF_PROJECT_ID},OPENAI_API_KEY=${OPENAI_API_KEY},EMBEDDING_MODEL=${EMBEDDING_MODEL},API_TIMEOUT=${API_TIMEOUT},CHUNK_SIZE=${CHUNK_SIZE},CHUNK_OVERLAP=${CHUNK_OVERLAP},ENVIRONMENT=${ENVIRONMENT},LOG_LEVEL=${LOG_LEVEL}" \
   --project=${GCF_PROJECT_ID}
 
 if [[ $? -eq 0 ]]; then
@@ -108,13 +131,12 @@ gcloud functions deploy create-embeddings-from-chunks \
   --entry-point=create_embeddings_from_chunks \
   --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
   --trigger-event-filters="bucket=${PROCESSED_BUCKET_NAME}" \
-  --trigger-event-filters-path-pattern="processed/*_chunks.json" \
   --service-account=${SERVICE_ACCOUNT} \
   --memory=2048MB \
   --timeout=900s \
   --max-instances=5 \
   --concurrency=1 \
-  --set-env-vars="GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCF_PROJECT_ID=${GCF_PROJECT_ID},ENVIRONMENT=production" \
+  --set-env-vars="GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCF_PROJECT_ID=${GCF_PROJECT_ID},OPENAI_API_KEY=${OPENAI_API_KEY},EMBEDDING_MODEL=${EMBEDDING_MODEL},API_TIMEOUT=${API_TIMEOUT},CHUNK_SIZE=${CHUNK_SIZE},CHUNK_OVERLAP=${CHUNK_OVERLAP},ENVIRONMENT=${ENVIRONMENT},LOG_LEVEL=${LOG_LEVEL}" \
   --project=${GCF_PROJECT_ID}
 
 if [[ $? -eq 0 ]]; then
