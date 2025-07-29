@@ -64,7 +64,7 @@ def format_file_size(size_bytes: int) -> str:
 
 def validate_file(uploaded_file: Optional[Any]) -> Dict[str, Any]:
     """
-    Valida que el archivo sea válido para procesamiento con validaciones de seguridad.
+    Valida que el archivo sea válido para procesamiento con validaciones básicas únicamente.
     
     Args:
         uploaded_file: Archivo subido por Streamlit
@@ -97,19 +97,25 @@ def validate_file(uploaded_file: Optional[Any]) -> Dict[str, Any]:
                 'error': ERROR_FILE_TOO_LARGE
             }
         
-        # Validaciones avanzadas de seguridad
+        # Validación básica de firma PDF (muy permisiva)
         try:
-            # Leer el archivo para validación de seguridad
+            # Leer el archivo para validación básica
             file_data = uploaded_file.read()
             uploaded_file.seek(0)  # Resetear posición del archivo
             
-            # Realizar validación de seguridad completa
-            security_validation = pdf_validator.validate_file(file_data=file_data)
-            
-            if not security_validation['valid']:
+            # Verificar que sea un PDF válido (solo firma básica)
+            if len(file_data) < 8:
                 return {
                     'valid': False,
-                    'error': f"Validación de seguridad: {security_validation.get('error', 'Error desconocido')}"
+                    'error': "Archivo demasiado pequeño para ser un PDF válido"
+                }
+            
+            # Verificar firma PDF básica
+            header = file_data[:8]
+            if not (header.startswith(b'%PDF-1.') or header.startswith(b'%PDF-2.')):
+                return {
+                    'valid': False,
+                    'error': "No es un archivo PDF válido"
                 }
             
             return {'valid': True, 'file_data': file_data}

@@ -83,7 +83,7 @@ def render_sidebar() -> None:
         
         st.markdown("""
         ### 🆘 Soporte
-        - **Email:** soporte@medicina.uba.ar
+        - **Email:** drcecim@gmail.com
         - **Docs:** [Wiki del proyecto](https://github.com/medicina-uba/drcecim)
         """)
 
@@ -311,7 +311,7 @@ def show_error_page(error_message: str) -> None:
        - Verificar acceso al bucket de GCS
     
     3. **Contactar soporte**
-       - Email: soporte@medicina.uba.ar
+       - Email: drcecim@gmail.com
        - Incluir el mensaje de error completo
     """)
 

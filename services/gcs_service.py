@@ -157,6 +157,41 @@ class GCSService:
             logger.error(f"Error de conectividad al subir string: {str(e)}")
             return False
     
+    def upload_bytes(self, content: bytes, gcs_path: str, content_type: Optional[str] = None) -> bool:
+        """
+        Sube datos binarios como archivo a GCS.
+        
+        Args:
+            content (bytes): Contenido binario
+            gcs_path (str): Ruta destino en GCS
+            content_type (Optional[str]): Tipo de contenido (se infiere del nombre si no se especifica)
+            
+        Returns:
+            bool: True si se subió exitosamente
+        """
+        try:
+            blob = self.bucket.blob(gcs_path)
+            
+            # Inferir content_type del nombre del archivo si no se especifica
+            if not content_type:
+                import mimetypes
+                content_type, _ = mimetypes.guess_type(gcs_path)
+                if not content_type:
+                    content_type = 'application/octet-stream'
+            
+            blob.content_type = content_type
+            blob.upload_from_string(content, content_type=content_type)
+            
+            logger.info(f"Bytes subidos exitosamente: gs://{self.bucket_name}/{gcs_path} ({len(content)} bytes)")
+            return True
+            
+        except (ValueError, TypeError) as e:
+            logger.error(f"Contenido o tipo de contenido inválido: {str(e)}")
+            return False
+        except Exception as e:
+            logger.error(f"Error de conectividad al subir bytes: {str(e)}")
+            return False
+    
     def download_file(self, gcs_path: str, local_path: Optional[str] = None) -> str:
         """
         Descarga un archivo de GCS a una ubicación local.

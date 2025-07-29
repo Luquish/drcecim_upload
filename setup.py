@@ -75,7 +75,7 @@ setup(
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="DrCecim Team",
-    author_email="soporte@medicina.uba.ar",
+    author_email="drcecim@gmail.com",
     url="https://github.com/medicina-uba/drcecim-upload",
     
     # Package discovery

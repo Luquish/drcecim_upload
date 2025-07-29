@@ -159,7 +159,7 @@ def _show_unexpected_error(error_message: str) -> None:
        - Verificar archivos de log si están configurados
     
     3. **Contactar soporte**
-       - Email: soporte@medicina.uba.ar
+       - Email: drcecim@gmail.com
        - Incluir el mensaje de error completo
        - Incluir información del entorno (Python, OS, etc.)
     """)
