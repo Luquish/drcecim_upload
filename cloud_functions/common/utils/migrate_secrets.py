@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from services.secrets_service import SecureConfigManager
-from config.settings import GCF_PROJECT_ID
+from common.config.settings import GCF_PROJECT_ID
 
 
 def main():

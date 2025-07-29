@@ -12,7 +12,7 @@ import numpy as np
 import faiss
 import json
 
-from config.settings import (
+from common.config.settings import (
     GCS_BUCKET_NAME,
     GCS_CREDENTIALS_PATH,
     GCS_EMBEDDINGS_PREFIX,

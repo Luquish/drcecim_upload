@@ -134,8 +134,8 @@ gcloud functions deploy process-pdf-to-chunks \
   --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
   --trigger-event-filters="bucket=${ENTRY_BUCKET_NAME}" \
   --service-account=${SERVICE_ACCOUNT} \
-  --memory=1024MB \
-  --timeout=540s \
+  --memory=2048MB \
+  --timeout=900s \
   --max-instances=10 \
   --set-env-vars="GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCF_PROJECT_ID=${GCF_PROJECT_ID},OPENAI_API_KEY=${OPENAI_API_KEY},EMBEDDING_MODEL=${EMBEDDING_MODEL},API_TIMEOUT=${API_TIMEOUT},CHUNK_SIZE=${CHUNK_SIZE},CHUNK_OVERLAP=${CHUNK_OVERLAP},ENVIRONMENT=${ENVIRONMENT},LOG_LEVEL=${LOG_LEVEL}" \
   --project=${GCF_PROJECT_ID}

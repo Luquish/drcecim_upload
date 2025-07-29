@@ -8,7 +8,7 @@ from typing import List, Dict, Any
 import openai
 
 from .base_model import BaseModel
-from config.settings import API_TIMEOUT, MAX_OUTPUT_TOKENS, TEMPERATURE, TOP_P
+from common.config.settings import API_TIMEOUT, MAX_OUTPUT_TOKENS, TEMPERATURE, TOP_P
 
 logger = logging.getLogger(__name__)
 

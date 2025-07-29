@@ -10,7 +10,7 @@ from enum import Enum
 from pathlib import Path
 
 from google.cloud import storage
-from config.settings import GCS_BUCKET_NAME
+from common.config.settings import GCS_BUCKET_NAME
 
 logger = logging.getLogger(__name__)
 

@@ -27,7 +27,7 @@ from typing import List, Dict, Optional, Any, Tuple
 import pandas as pd
 from tqdm import tqdm
 
-from config.settings import CHUNK_SIZE, CHUNK_OVERLAP, TEMP_DIR
+from common.config.settings import CHUNK_SIZE, CHUNK_OVERLAP, TEMP_DIR
 
 # Configuración de logging
 logger = logging.getLogger(__name__)

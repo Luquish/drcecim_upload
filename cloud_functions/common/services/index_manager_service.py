@@ -24,8 +24,8 @@ from google.api_core.exceptions import (
 )
 
 from .gcs_service import GCSService
-from utils.monitoring import get_logger
-from config.settings import (
+from common.utils.monitoring import get_logger
+from common.config.settings import (
     GCS_EMBEDDINGS_PREFIX, GCS_METADATA_PREFIX,
     GCS_FAISS_INDEX_NAME, GCS_METADATA_NAME
 )

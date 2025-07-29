@@ -5,7 +5,7 @@ import os
 import logging
 from typing import Optional, Dict, Any
 from google.cloud import secretmanager
-from config.settings import GCF_PROJECT_ID
+from common.config.settings import GCF_PROJECT_ID
 
 logger = logging.getLogger(__name__)
 

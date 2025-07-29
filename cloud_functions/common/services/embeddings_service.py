@@ -34,8 +34,8 @@ from tqdm import tqdm
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import openai
 
-from models.openai_model import OpenAIEmbedding
-from config.settings import (
+from common.models.openai_model import OpenAIEmbedding
+from common.config.settings import (
     OPENAI_API_KEY, 
     EMBEDDING_MODEL, 
     API_TIMEOUT,

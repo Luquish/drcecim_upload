@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional
 
 import functions_framework
 from google.cloud import storage
-import marker_pdf
+from marker.converters.pdf import PdfConverter
 
 # Importar configuración compartida
 from common.config import settings
@@ -52,9 +52,10 @@ def is_pdf_file(file_name: str) -> bool:
 def extract_text_from_pdf(pdf_path: str) -> str:
     """Extrae texto de un archivo PDF usando marker-pdf."""
     try:
+        converter = PdfConverter()
         with open(pdf_path, 'rb') as file:
-            doc = marker_pdf.Pdf(file.read())
-            return doc.text()
+            result = converter.convert(file.read())
+            return result.text
     except Exception as e:
         logger.error(f"Error al extraer texto del PDF: {str(e)}")
         raise

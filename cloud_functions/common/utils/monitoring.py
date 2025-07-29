@@ -20,7 +20,7 @@ from pathlib import Path
 from collections import defaultdict, deque
 from threading import Lock
 
-from config.settings import LOG_LEVEL, LOG_FORMAT, ENVIRONMENT, DEBUG
+from common.config.settings import LOG_LEVEL, LOG_FORMAT, ENVIRONMENT, DEBUG
 
 
 class DrCecimLogger:
