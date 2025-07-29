@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================================================
-# SCRIPT DE DESPLIEGUE PARA ARQUITECTURA ORIENTADA A EVENTOS
+# SCRIPT DE DESPLIEGUE PARA ARQUITECTURA MONOREPO
 # =============================================================================
 
 set -e
@@ -73,6 +73,31 @@ check_required_vars() {
     print_success "Variables de entorno verificadas"
 }
 
+# Verificar estructura monorepo
+check_monorepo_structure() {
+    print_message "Verificando estructura monorepo..."
+    
+    # Verificar que existe el archivo main.py
+    if [[ ! -f "main.py" ]]; then
+        print_error "Archivo main.py no encontrado"
+        exit 1
+    fi
+    
+    # Verificar que existe el archivo requirements.txt
+    if [[ ! -f "requirements.txt" ]]; then
+        print_error "Archivo requirements.txt no encontrado"
+        exit 1
+    fi
+    
+    # Verificar que existe el directorio common
+    if [[ ! -d "common" ]]; then
+        print_error "Directorio common no encontrado"
+        exit 1
+    fi
+    
+    print_success "Estructura monorepo verificada"
+}
+
 # Cargar configuración
 load_config_from_env
 
@@ -82,26 +107,29 @@ PROCESSED_BUCKET_NAME="${GCS_BUCKET_NAME}"  # Mismo bucket, diferentes prefijos
 SERVICE_ACCOUNT="data-pipeline-serviceaccount@${GCF_PROJECT_ID}.iam.gserviceaccount.com"
 
 print_message "==================================================================="
-print_message "DESPLEGANDO ARQUITECTURA ORIENTADA A EVENTOS PARA DRCECIM UPLOAD"
+print_message "DESPLEGANDO ARQUITECTURA MONOREPO PARA DRCECIM UPLOAD"
 print_message "==================================================================="
 print_message "Proyecto: ${GCF_PROJECT_ID}"
 print_message "Región: ${GCF_REGION}"
 print_message "Bucket: ${GCS_BUCKET_NAME}"
 print_message "Service Account: ${SERVICE_ACCOUNT}"
+print_message "Estructura: Monorepo (main.py + requirements.txt)"
 print_message "==================================================================="
 
 # Verificar variables requeridas
 check_required_vars
 
+# Verificar estructura monorepo
+check_monorepo_structure
+
 # Función 1: Procesar PDFs a chunks
 print_message "Desplegando función 1: process-pdf-to-chunks..."
 
-# Desplegar función
 gcloud functions deploy process-pdf-to-chunks \
   --gen2 \
   --runtime=python311 \
   --region=${GCF_REGION} \
-  --source=./process_pdf \
+  --source=. \
   --entry-point=process_pdf_to_chunks \
   --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
   --trigger-event-filters="bucket=${ENTRY_BUCKET_NAME}" \
@@ -122,12 +150,11 @@ fi
 # Función 2: Generar embeddings
 print_message "Desplegando función 2: create-embeddings-from-chunks..."
 
-# Desplegar función
 gcloud functions deploy create-embeddings-from-chunks \
   --gen2 \
   --runtime=python311 \
   --region=${GCF_REGION} \
-  --source=./create_embeddings \
+  --source=. \
   --entry-point=create_embeddings_from_chunks \
   --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
   --trigger-event-filters="bucket=${PROCESSED_BUCKET_NAME}" \
@@ -147,7 +174,7 @@ else
 fi
 
 print_message "==================================================================="
-print_success "DESPLIEGUE COMPLETADO"
+print_success "DESPLIEGUE COMPLETADO - ESTRUCTURA MONOREPO"
 print_message "==================================================================="
 
 print_message "Funciones desplegadas:"
@@ -164,4 +191,11 @@ print_warning "No necesitas configurar GCS_CREDENTIALS_PATH en producción."
 print_message ""
 print_message "Para verificar el estado de las funciones:"
 print_message "gcloud functions describe process-pdf-to-chunks --region=${GCF_REGION} --project=${GCF_PROJECT_ID}"
-print_message "gcloud functions describe create-embeddings-from-chunks --region=${GCF_REGION} --project=${GCF_PROJECT_ID}" 
+print_message "gcloud functions describe create-embeddings-from-chunks --region=${GCF_REGION} --project=${GCF_PROJECT_ID}"
+print_message ""
+print_message "Estructura monorepo implementada exitosamente:"
+print_message "✅ main.py: Contiene ambas funciones"
+print_message "✅ requirements.txt: Dependencias unificadas"
+print_message "✅ common/: Código compartido"
+print_message "✅ --source=.: Despliegue desde directorio raíz"
+print_message "✅ --entry-point: Especifica función a desplegar" 
