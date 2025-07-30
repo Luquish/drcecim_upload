@@ -18,8 +18,6 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt setup.py README.md ./
 COPY config/ ./config/
 COPY services/ ./services/
-COPY models/ ./models/
-COPY utils/ ./utils/
 COPY ui/ ./ui/
 
 # Instalar dependencias de Python

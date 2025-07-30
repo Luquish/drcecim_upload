@@ -3,7 +3,8 @@ Configuración específica para la aplicación Streamlit.
 """
 import os
 from typing import Optional
-from pydantic import BaseSettings, Field
+from pydantic_settings import BaseSettings
+from pydantic import Field
 
 
 class StreamlitSettings(BaseSettings):
@@ -53,6 +54,42 @@ class StreamlitSettings(BaseSettings):
     GCS_CREDENTIALS_PATH: Optional[str] = Field(
         default=None,
         description="Ruta a las credenciales de GCS"
+    )
+    
+    # Prefijos de GCS
+    GCS_EMBEDDINGS_PREFIX: str = Field(
+        default="embeddings/",
+        description="Prefijo para archivos de embeddings en GCS"
+    )
+    GCS_METADATA_PREFIX: str = Field(
+        default="metadata/",
+        description="Prefijo para archivos de metadatos en GCS"
+    )
+    GCS_PROCESSED_PREFIX: str = Field(
+        default="processed/",
+        description="Prefijo para archivos procesados en GCS"
+    )
+    GCS_TEMP_PREFIX: str = Field(
+        default="temp/",
+        description="Prefijo para archivos temporales en GCS"
+    )
+    
+    # Nombres de archivos en GCS
+    GCS_FAISS_INDEX_NAME: str = Field(
+        default="faiss_index.bin",
+        description="Nombre del archivo de índice FAISS en GCS"
+    )
+    GCS_METADATA_NAME: str = Field(
+        default="metadata.csv",
+        description="Nombre del archivo de metadatos en GCS"
+    )
+    GCS_METADATA_SUMMARY_NAME: str = Field(
+        default="metadata_summary.csv",
+        description="Nombre del archivo de resumen de metadatos en GCS"
+    )
+    GCS_CONFIG_NAME: str = Field(
+        default="config.json",
+        description="Nombre del archivo de configuración en GCS"
     )
     
     # Google Cloud Functions
@@ -209,6 +246,14 @@ settings = StreamlitSettings()
 # Variables de entorno para compatibilidad
 GCS_BUCKET_NAME = settings.GCS_BUCKET_NAME
 GCS_CREDENTIALS_PATH = settings.GCS_CREDENTIALS_PATH
+GCS_EMBEDDINGS_PREFIX = settings.GCS_EMBEDDINGS_PREFIX
+GCS_METADATA_PREFIX = settings.GCS_METADATA_PREFIX
+GCS_PROCESSED_PREFIX = settings.GCS_PROCESSED_PREFIX
+GCS_TEMP_PREFIX = settings.GCS_TEMP_PREFIX
+GCS_FAISS_INDEX_NAME = settings.GCS_FAISS_INDEX_NAME
+GCS_METADATA_NAME = settings.GCS_METADATA_NAME
+GCS_METADATA_SUMMARY_NAME = settings.GCS_METADATA_SUMMARY_NAME
+GCS_CONFIG_NAME = settings.GCS_CONFIG_NAME
 GCF_REGION = settings.GCF_REGION
 GCF_PROJECT_ID = settings.GCF_PROJECT_ID
 OPENAI_API_KEY = settings.OPENAI_API_KEY
