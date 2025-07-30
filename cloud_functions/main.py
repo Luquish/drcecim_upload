@@ -154,6 +154,11 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
             logger.info(f"Ignorando archivo no-PDF: {file_name}")
             return
         
+        # Verificar que esté en la carpeta uploads/
+        if not file_name.startswith('uploads/'):
+            logger.info(f"Ignorando archivo fuera de carpeta uploads/: {file_name}")
+            return
+        
         # Inicializar cliente de Storage
         storage_client = storage.Client()
         bucket = storage_client.bucket(bucket_name)
@@ -333,6 +338,11 @@ def _validate_cloud_event(cloud_event) -> bool:
     # Verificar que sea un archivo de chunks
     if not is_chunks_file(file_name):
         app_logger.info(f"Ignorando archivo no-chunks: {file_name}")
+        return False
+    
+    # Verificar que esté en la carpeta processed/
+    if not file_name.startswith('processed/'):
+        app_logger.info(f"Ignorando archivo fuera de carpeta processed/: {file_name}")
         return False
     
     return True

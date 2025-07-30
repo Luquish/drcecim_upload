@@ -13,22 +13,11 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Función para imprimir mensajes coloreados
-print_message() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# --- Funciones de Utilidad ---
+print_message() { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Cargar configuración desde archivo .env
 load_config_from_env() {
@@ -98,6 +87,35 @@ check_monorepo_structure() {
     print_success "Estructura monorepo verificada"
 }
 
+# =============================================================================
+# Verifica si una función existe y la borra si es necesario.
+# =============================================================================
+delete_if_exists() {
+    local func_name=$1
+    print_message "Verificando si la función '${func_name}' ya existe en la región ${GCF_REGION}..."
+
+    # El comando 'describe' falla si la función no existe.
+    # Redirigimos la salida para evitar mensajes de error en la consola.
+    if gcloud functions describe "${func_name}" --region "${GCF_REGION}" --project "${GCF_PROJECT_ID}" > /dev/null 2>&1; then
+        print_warning "La función '${func_name}' ya existe. Se procederá a eliminarla..."
+        
+        # El flag --quiet evita la confirmación interactiva (y/N).
+        gcloud functions delete "${func_name}" \
+          --region "${GCF_REGION}" \
+          --project "${GCF_PROJECT_ID}" \
+          --quiet
+
+        if [[ $? -eq 0 ]]; then
+            print_success "Función '${func_name}' eliminada exitosamente."
+        else
+            print_error "Ocurrió un error al eliminar la función '${func_name}'."
+            exit 1
+        fi
+    else
+        print_message "La función '${func_name}' no existe. Se procederá con la creación."
+    fi
+}
+
 # Cargar configuración
 load_config_from_env
 
@@ -122,7 +140,10 @@ check_required_vars
 # Verificar estructura monorepo
 check_monorepo_structure
 
+# =============================================================================
 # Función 1: Procesar PDFs a chunks
+# Trigger: Solo para archivos .pdf en la carpeta 'uploads/'
+# =============================================================================
 print_message "Desplegando función 1: process-pdf-to-chunks..."
 
 gcloud functions deploy process-pdf-to-chunks \
@@ -132,7 +153,7 @@ gcloud functions deploy process-pdf-to-chunks \
   --source=. \
   --entry-point=process_pdf_to_chunks \
   --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
-  --trigger-event-filters="bucket=${ENTRY_BUCKET_NAME}" \
+  --trigger-event-filters="bucket=${GCS_BUCKET_NAME}" \
   --service-account=${SERVICE_ACCOUNT} \
   --memory=2048MB \
   --timeout=540s \
@@ -147,7 +168,10 @@ else
     exit 1
 fi
 
+# =============================================================================
 # Función 2: Generar embeddings
+# Trigger: Solo para archivos .json en la carpeta 'processed/'
+# =============================================================================
 print_message "Desplegando función 2: create-embeddings-from-chunks..."
 
 gcloud functions deploy create-embeddings-from-chunks \
@@ -157,7 +181,7 @@ gcloud functions deploy create-embeddings-from-chunks \
   --source=. \
   --entry-point=create_embeddings_from_chunks \
   --trigger-event-filters="type=google.cloud.storage.object.v1.finalized" \
-  --trigger-event-filters="bucket=${PROCESSED_BUCKET_NAME}" \
+  --trigger-event-filters="bucket=${GCS_BUCKET_NAME}" \
   --service-account=${SERVICE_ACCOUNT} \
   --memory=2048MB \
   --timeout=540s \
