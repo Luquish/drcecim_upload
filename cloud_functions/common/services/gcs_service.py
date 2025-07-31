@@ -296,7 +296,6 @@ class GCSService:
         except Exception as e:
             logger.error(f"Error de conectividad al verificar existencia del archivo: {str(e)}")
             return False
-            return False
     
     def delete_file(self, gcs_path: str) -> bool:
         """

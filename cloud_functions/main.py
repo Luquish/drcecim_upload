@@ -176,33 +176,29 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
         event_data = cloud_event.data
         bucket_name = event_data.get('bucket')
         file_name = event_data.get('name')
-        event_type = event_data.get('type')
+        event_type = cloud_event['type']
+
+        # Solo procesamos el evento real de Storage → FINALIZED
+        if event_type != "google.cloud.storage.object.v1.finalized":
+            return "ignored", 204                # ⚠️  NO lances excepción
+
+        if not file_name or not bucket_name:
+            # Cuando llegue el “ping” del trigger-check, saldrá por aquí
+            return "ignored", 204
+
+        if (not file_name.startswith("uploads/") or
+            not file_name.lower().endswith(".pdf")):
+            return "ignored", 204
         
-        # Validar datos del evento
-        if not bucket_name or not file_name or not event_type:
-            raise ValueError("Datos del evento incompletos")
-        
-        structured_logger.info("Evento de Cloud Storage recibido", {
-            'event_type': event_type,
+        # Debug: Log completo del evento
+        structured_logger.info("Evento completo recibido", {
+            'cloud_event_type': getattr(cloud_event, 'type', 'unknown'),
+            'cloud_event_data': str(event_data),
+            'bucket_name': bucket_name,
             'file_name': file_name,
-            'bucket_name': bucket_name
+            'event_type': event_type
         })
-        
-        # Verificar que sea un evento de creación/actualización
-        if 'finalize' not in event_type:
-            structured_logger.info("Ignorando evento no-finalize", {'event_type': event_type})
-            return
-        
-        # Verificar que sea un archivo PDF
-        if not is_pdf_file(file_name):
-            structured_logger.info("Ignorando archivo no-PDF", {'file_name': file_name})
-            return
-        
-        # Verificar que esté en la carpeta uploads/
-        if not file_name.startswith('uploads/'):
-            structured_logger.info("Ignorando archivo fuera de carpeta uploads", {'file_name': file_name})
-            return
-        
+                
         # Inicializar cliente de Storage
         storage_client = storage.Client()
         bucket = storage_client.bucket(bucket_name)
@@ -395,7 +391,7 @@ def _validate_cloud_event(cloud_event) -> bool:
         bool: True si debe procesarse, False si debe ignorarse
     """
     event_data = cloud_event.data
-    event_type = event_data.get('type')
+    event_type = cloud_event['type']
     file_name = event_data.get('name')
     
     app_logger.info(f"Evento recibido: {event_type} para archivo: {file_name}")

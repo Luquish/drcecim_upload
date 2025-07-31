@@ -153,6 +153,11 @@ def setup_logging(
         enable_console_logging: Si habilitar logging a consola
         log_format: Formato personalizado de logs
     """
+    # En producción (Cloud Functions), verificar variable de entorno
+    import os
+    if os.getenv("LOG_TO_DISK") == "false":
+        enable_file_logging = False
+        log_dir = Path("/tmp")  # Solo directorio temporal disponible
     config = get_logging_config(
         log_level=log_level,
         log_dir=log_dir,
@@ -243,8 +248,8 @@ def setup_production_logging() -> None:
     """Configura logging para producción."""
     setup_logging(
         log_level="INFO",
-        log_dir=Path("/var/log/drcecim"),
-        enable_file_logging=True,
-        enable_console_logging=False,
+        log_dir=Path("/tmp"),  # Solo directorio temporal disponible en Cloud Functions
+        enable_file_logging=False,  # Solo consola en producción
+        enable_console_logging=True,
         log_format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     ) 
