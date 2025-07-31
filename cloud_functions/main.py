@@ -13,28 +13,62 @@ from typing import Dict, Any, Optional
 
 import functions_framework
 from google.cloud import storage
-from marker.converters.pdf import PdfConverter
 
 # Importar configuración compartida
 from common.config import settings
+from common.config.logging_config import setup_logging, get_logger, StructuredLogger
 from common.services.embeddings_service import EmbeddingService
 from common.services.gcs_service import GCSService
 from common.services.status_service import StatusService, DocumentStatus
 from common.services.index_manager_service import IndexManagerService
-from common.utils.monitoring import get_logger, get_processing_monitor, log_system_info
+from common.services.processing_service import DocumentProcessor
+from common.services.secrets_service import SecureConfigManager
+from common.utils.monitoring import get_logger as get_monitoring_logger, get_processing_monitor, log_system_info
+from common.utils.temp_file_manager import TempFileManager, temp_file, temp_dir
+from common.utils.resource_managers import (
+    document_processing_context,
+    with_processing_resources,
+    error_handling_context
+)
 import openai
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-# Configurar logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Configurar logging mejorado
+setup_logging(log_level="INFO", enable_file_logging=True, enable_console_logging=True)
+logger = get_logger(__name__)
+structured_logger = StructuredLogger("main")
 
-# Configurar parámetros de procesamiento
-CHUNK_SIZE = int(os.getenv('CHUNK_SIZE', '250'))
-CHUNK_OVERLAP = int(os.getenv('CHUNK_OVERLAP', '50'))
+# Inicializar configurador seguro
+config_manager = SecureConfigManager()
+
+def get_config_value(key: str, default: str = None) -> str:
+    """
+    Obtiene un valor de configuración de forma segura usando SecretsService.
+    
+    Args:
+        key (str): Clave de configuración
+        default (str): Valor por defecto si no se encuentra
+        
+    Returns:
+        str: Valor de configuración
+    """
+    try:
+        value = config_manager.get_config_value(key, default)
+        if value:
+            logger.debug(f"Configuración obtenida de forma segura: {key}")
+        else:
+            logger.warning(f"Configuración no encontrada: {key}, usando valor por defecto: {default}")
+        return value or default
+    except Exception as e:
+        logger.error(f"Error obteniendo configuración {key}: {str(e)}")
+        return default
+
+# Configurar parámetros de procesamiento usando SecretsService
+CHUNK_SIZE = int(get_config_value('CHUNK_SIZE', '250'))
+CHUNK_OVERLAP = int(get_config_value('CHUNK_OVERLAP', '50'))
 
 # Inicializar monitoreo para create_embeddings
-app_logger = get_logger("create_embeddings_function")
+app_logger = get_monitoring_logger("create_embeddings_function")
 processing_monitor = get_processing_monitor()
 
 # Log información del sistema al inicio
@@ -49,69 +83,75 @@ def is_pdf_file(file_name: str) -> bool:
     return file_name.lower().endswith('.pdf')
 
 
-def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extrae texto de un archivo PDF usando marker-pdf."""
-    try:
-        converter = PdfConverter()
-        with open(pdf_path, 'rb') as file:
-            result = converter.convert(file.read())
-            return result.text
-    except Exception as e:
-        logger.error(f"Error al extraer texto del PDF: {str(e)}")
-        raise
-
-
-def create_chunks(text: str, chunk_size: int = 250, chunk_overlap: int = 50) -> list:
-    """Divide el texto en chunks."""
-    if not text:
-        return []
-    
-    words = text.split()
-    chunks = []
-    
-    for i in range(0, len(words), chunk_size - chunk_overlap):
-        chunk_words = words[i:i + chunk_size]
-        chunk_text = ' '.join(chunk_words)
-        if chunk_text.strip():
-            chunks.append({
-                'text': chunk_text,
-                'start_word': i,
-                'end_word': min(i + chunk_size, len(words)),
-                'word_count': len(chunk_words)
-            })
-    
-    return chunks
-
-
 def process_pdf_document(pdf_path: str, filename: str) -> Dict:
-    """Procesa un documento PDF completo."""
+    """Procesa un documento PDF completo usando DocumentProcessor."""
     try:
-        # Extraer texto
-        text = extract_text_from_pdf(pdf_path)
-        
-        # Crear chunks
-        chunks = create_chunks(text, CHUNK_SIZE, CHUNK_OVERLAP)
-        
-        # Preparar resultado
-        result = {
+        structured_logger.info("Iniciando procesamiento de documento PDF", {
             'filename': filename,
-            'chunks': chunks,
-            'num_chunks': len(chunks),
-            'total_words': len(text.split()),
+            'pdf_path': pdf_path,
+            'chunk_size': CHUNK_SIZE,
+            'chunk_overlap': CHUNK_OVERLAP
+        })
+        
+        # Usar DocumentProcessor del processing_service
+        processor = DocumentProcessor()
+        result = processor.process_document_complete(pdf_path)
+        
+        if not result.get('processed_successfully', False):
+            structured_logger.error("Error en procesamiento de PDF con DocumentProcessor", {
+                'filename': filename,
+                'error': result.get('error', 'Error desconocido')
+            })
+            return {
+                'filename': filename,
+                'chunks': [],
+                'num_chunks': 0,
+                'total_words': 0,
+                'processed_successfully': False,
+                'error': result.get('error', 'Error desconocido')
+            }
+        
+        # Adaptar el formato de chunks al formato esperado por el resto del código
+        adapted_chunks = []
+        for i, chunk_text in enumerate(result.get('chunks', [])):
+            adapted_chunks.append({
+                'text': chunk_text,
+                'start_word': i * CHUNK_SIZE,  # Aproximación
+                'end_word': (i + 1) * CHUNK_SIZE,
+                'word_count': len(chunk_text.split())
+            })
+        
+        # Preparar resultado adaptado
+        adapted_result = {
+            'filename': filename,
+            'chunks': adapted_chunks,
+            'num_chunks': len(adapted_chunks),
+            'total_words': result.get('total_words', 0),
             'processing_timestamp': str(Path(pdf_path).stat().st_mtime),
             'processed_successfully': True,
             'metadata': {
                 'chunk_size': CHUNK_SIZE,
                 'chunk_overlap': CHUNK_OVERLAP,
-                'total_text_length': len(text)
+                'total_text_length': len(result.get('markdown_content', '')),
+                'processing_method': 'markdown_enhanced'
             }
         }
         
-        logger.info(f"PDF procesado exitosamente: {len(chunks)} chunks creados")
-        return result
+        structured_logger.info("PDF procesado exitosamente con DocumentProcessor", {
+            'filename': filename,
+            'num_chunks': len(adapted_chunks),
+            'total_words': result.get('total_words', 0),
+            'processing_method': 'markdown_enhanced'
+        })
+        return adapted_result
         
     except Exception as e:
-        logger.error(f"Error procesando PDF: {str(e)}")
+        structured_logger.error("Error crítico procesando PDF", {
+            'filename': filename,
+            'pdf_path': pdf_path,
+            'error': str(e),
+            'error_type': type(e).__name__
+        })
         return {
             'filename': filename,
             'chunks': [],
@@ -136,27 +176,31 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
         event_data = cloud_event.data
         bucket_name = event_data.get('bucket')
         file_name = event_data.get('name')
-        event_type = event_data.get('eventType')
+        event_type = event_data.get('type')
         
         # Validar datos del evento
         if not bucket_name or not file_name or not event_type:
             raise ValueError("Datos del evento incompletos")
         
-        logger.info(f"Evento recibido: {event_type} para archivo: {file_name}")
+        structured_logger.info("Evento de Cloud Storage recibido", {
+            'event_type': event_type,
+            'file_name': file_name,
+            'bucket_name': bucket_name
+        })
         
         # Verificar que sea un evento de creación/actualización
         if 'finalize' not in event_type:
-            logger.info(f"Ignorando evento {event_type}")
+            structured_logger.info("Ignorando evento no-finalize", {'event_type': event_type})
             return
         
         # Verificar que sea un archivo PDF
         if not is_pdf_file(file_name):
-            logger.info(f"Ignorando archivo no-PDF: {file_name}")
+            structured_logger.info("Ignorando archivo no-PDF", {'file_name': file_name})
             return
         
         # Verificar que esté en la carpeta uploads/
         if not file_name.startswith('uploads/'):
-            logger.info(f"Ignorando archivo fuera de carpeta uploads/: {file_name}")
+            structured_logger.info("Ignorando archivo fuera de carpeta uploads", {'file_name': file_name})
             return
         
         # Inicializar cliente de Storage
@@ -164,48 +208,74 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
         bucket = storage_client.bucket(bucket_name)
         blob = bucket.blob(file_name)
         
-        # Crear directorio temporal
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_file_path = Path(temp_dir) / Path(file_name).name
-            
-            # Descargar archivo PDF
-            logger.info(f"Descargando PDF: {file_name}")
-            blob.download_to_filename(str(temp_file_path))
-            
-            # Procesar PDF
-            logger.info(f"Procesando PDF: {file_name}")
-            result = process_pdf_document(str(temp_file_path), file_name)
-            
-            if not result.get('processed_successfully', False):
-                logger.error(f"Error procesando PDF: {result.get('error', 'Error desconocido')}")
-                return
-            
-            # Preparar datos para subir
-            chunks_data = {
-                'filename': result['filename'],
-                'chunks': result['chunks'],
-                'metadata': result['metadata'],
-                'num_chunks': result['num_chunks'],
-                'total_words': result['total_words'],
-                'processing_timestamp': result['processing_timestamp'],
-                'source_file': file_name
-            }
-            
-            # Subir chunks procesados
-            chunks_filename = f"{Path(file_name).stem}_chunks.json"
-            chunks_gcs_path = f"processed/{chunks_filename}"
-            
-            logger.info(f"Subiendo chunks a: {chunks_gcs_path}")
-            chunks_blob = bucket.blob(chunks_gcs_path)
-            chunks_blob.upload_from_string(
-                json.dumps(chunks_data, ensure_ascii=False, indent=2),
-                content_type='application/json'
-            )
-            
-            logger.info(f"PDF procesado exitosamente. Chunks guardados en: {chunks_gcs_path}")
+        # Procesar con context managers para robustez
+        with document_processing_context() as doc_context:
+            with error_handling_context() as error_context:
+                # Crear directorio temporal usando TempFileManager
+                with temp_dir(prefix="drcecim_pdf_") as temp_dir_path:
+                    temp_file_path = Path(temp_dir_path) / Path(file_name).name
+                    
+                    # Descargar archivo PDF
+                    structured_logger.info("Iniciando descarga de PDF", {
+                        'file_name': file_name,
+                        'temp_path': str(temp_file_path)
+                    })
+                    blob.download_to_filename(str(temp_file_path))
+                    
+                    # Procesar PDF
+                    structured_logger.info("Iniciando procesamiento de PDF", {
+                        'file_name': file_name,
+                        'chunk_size': CHUNK_SIZE,
+                        'chunk_overlap': CHUNK_OVERLAP
+                    })
+                    result = process_pdf_document(str(temp_file_path), file_name)
+                    
+                    if not result.get('processed_successfully', False):
+                        structured_logger.error("Error en procesamiento de PDF", {
+                            'file_name': file_name,
+                            'error': result.get('error', 'Error desconocido')
+                        })
+                        return
+                    
+                    # Preparar datos para subir
+                    chunks_data = {
+                        'filename': result['filename'],
+                        'chunks': result['chunks'],
+                        'metadata': result['metadata'],
+                        'num_chunks': result['num_chunks'],
+                        'total_words': result['total_words'],
+                        'processing_timestamp': result['processing_timestamp'],
+                        'source_file': file_name
+                    }
+                    
+                    # Subir chunks procesados
+                    chunks_filename = f"{Path(file_name).stem}_chunks.json"
+                    chunks_gcs_path = f"processed/{chunks_filename}"
+                    
+                    structured_logger.info("Subiendo chunks procesados", {
+                        'file_name': file_name,
+                        'chunks_path': chunks_gcs_path,
+                        'num_chunks': result['num_chunks'],
+                        'total_words': result['total_words']
+                    })
+                    chunks_blob = bucket.blob(chunks_gcs_path)
+                    chunks_blob.upload_from_string(
+                        json.dumps(chunks_data, ensure_ascii=False, indent=2),
+                        content_type='application/json'
+                    )
+                    
+                    structured_logger.info("PDF procesado exitosamente", {
+                        'file_name': file_name,
+                        'chunks_path': chunks_gcs_path,
+                        'num_chunks': result['num_chunks'],
+                        'processing_time': 'completed'
+                    })
     
     except Exception as e:
-        logger.error(f"Error en process_pdf_to_chunks: {str(e)}")
+        structured_logger.error("Error crítico en process_pdf_to_chunks", {
+            'error': str(e),
+            'file_name': file_name if 'file_name' in locals() else 'unknown'
+        })
         raise
 
 
@@ -325,7 +395,7 @@ def _validate_cloud_event(cloud_event) -> bool:
         bool: True si debe procesarse, False si debe ignorarse
     """
     event_data = cloud_event.data
-    event_type = event_data.get('eventType')
+    event_type = event_data.get('type')
     file_name = event_data.get('name')
     
     app_logger.info(f"Evento recibido: {event_type} para archivo: {file_name}")
@@ -363,33 +433,37 @@ def _process_embeddings_pipeline(bucket_name: str, file_name: str, session_id: s
     # Inicializar servicios
     gcs_service = GCSService(bucket_name=bucket_name)
     status_service = StatusService()
-    temp_dir = tempfile.mkdtemp(prefix='drcecim_embeddings_')
     
-    try:
-        # 1. Descargar y cargar chunks
-        chunks_data = _download_and_load_chunks(gcs_service, file_name, session_id)
-        
-        # 2. Buscar document_id y actualizar estado
-        document_id = _update_document_status_start(status_service, chunks_data)
-        
-        # 3. Generar embeddings
-        embeddings_result = _generate_embeddings(chunks_data, temp_dir, session_id, document_id, status_service)
-        
-        # 4. Gestionar índice FAISS
-        result = _manage_faiss_index(gcs_service, embeddings_result, session_id)
-        
-        # 5. Actualizar estado final
-        _update_document_status_completed(status_service, document_id, result)
-        
-        return result
-        
-    finally:
-        # Limpiar recursos
-        if os.path.exists(temp_dir):
-            try:
-                os.rmdir(temp_dir)
-            except (OSError, PermissionError) as e:
-                logger.debug(f"No se pudo eliminar directorio temporal {temp_dir}: {e}")
+    # Usar context managers para robustez y límites de recursos
+    with with_processing_resources(max_memory_mb=2048, timeout_seconds=900) as resources:
+        with error_handling_context() as error_context:
+            with temp_dir(prefix='drcecim_embeddings_') as temp_dir_path:
+                try:
+                    # 1. Descargar y cargar chunks
+                    chunks_data = _download_and_load_chunks(gcs_service, file_name, session_id)
+                    
+                    # 2. Buscar document_id y actualizar estado
+                    document_id = _update_document_status_start(status_service, chunks_data)
+                    
+                    # 3. Generar embeddings
+                    embeddings_result = _generate_embeddings(chunks_data, temp_dir_path, session_id, document_id, status_service)
+                    
+                    # 4. Gestionar índice FAISS
+                    result = _manage_faiss_index(gcs_service, embeddings_result, session_id)
+                    
+                    # 5. Actualizar estado final
+                    _update_document_status_completed(status_service, document_id, result)
+                    
+                    return result
+                    
+                except Exception as e:
+                    structured_logger.error("Error en pipeline de embeddings", {
+                        'session_id': session_id,
+                        'file_name': file_name,
+                        'error': str(e),
+                        'error_type': type(e).__name__
+                    })
+                    raise
 
 
 def _download_and_load_chunks(gcs_service: GCSService, file_name: str, session_id: str) -> Dict:
