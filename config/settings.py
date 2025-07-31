@@ -107,8 +107,9 @@ class StreamlitSettings(BaseSettings):
     # =============================================================================
     
     # API Keys y Modelos
-    OPENAI_API_KEY: str = Field(
-        description="API Key de OpenAI"
+    OPENAI_API_KEY: Optional[str] = Field(
+        default=None,
+        description="API Key de OpenAI (opcional para Streamlit)"
     )
     PRIMARY_MODEL: str = Field(
         default="gpt-4o-mini",

@@ -27,7 +27,6 @@ services:
       - DEVICE=cpu
       
       # Configuración de OpenAI (especificar en archivo .env)
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
       - API_TIMEOUT=60
       - MAX_OUTPUT_TOKENS=2048
@@ -42,8 +41,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/cloud_functions/credentials/service-account.json
       
       # URLs de Cloud Functions (actualizar después del deployment)
-      - CLOUD_FUNCTION_URL=${CLOUD_FUNCTION_URL}
-      - EMBEDDINGS_FUNCTION_URL=${EMBEDDINGS_FUNCTION_URL}
+      # Nota: Estas variables no se utilizan en la aplicación Streamlit
       
       # Configuración de límites
       - OPENAI_RATE_LIMIT=50
