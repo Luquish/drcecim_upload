@@ -24,7 +24,7 @@ from common.services.index_manager_service import IndexManagerService
 from common.services.processing_service import DocumentProcessor
 from common.services.secrets_service import SecureConfigManager
 from common.utils.monitoring import get_logger as get_monitoring_logger, get_processing_monitor, log_system_info
-from common.utils.temp_file_manager import TempFileManager, temp_file, temp_dir
+from common.utils.temp_file_manager import temp_dir
 from common.utils.resource_managers import (
     document_processing_context,
     with_processing_resources,
@@ -40,6 +40,33 @@ structured_logger = StructuredLogger("main")
 
 # Inicializar configurador seguro
 config_manager = SecureConfigManager()
+
+# Variables globales para pre-warm (cold-start optimization)
+_embedding_service = None
+_document_processor = None
+_gcs_service = None
+
+def get_embedding_service() -> EmbeddingService:
+    """Obtiene una instancia global del servicio de embeddings."""
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = EmbeddingService()
+    return _embedding_service
+
+def get_document_processor() -> DocumentProcessor:
+    """Obtiene una instancia global del procesador de documentos."""
+    global _document_processor
+    if _document_processor is None:
+        _document_processor = DocumentProcessor()
+    return _document_processor
+
+def get_gcs_service() -> GCSService:
+    """Obtiene una instancia global del servicio de GCS."""
+    global _gcs_service
+    if _gcs_service is None:
+        bucket_name = get_config_value('GCS_BUCKET_NAME', '')
+        _gcs_service = GCSService(bucket_name)
+    return _gcs_service
 
 def get_config_value(key: str, default: str = None) -> str:
     """

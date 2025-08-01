@@ -102,9 +102,9 @@ class MetricsCollector:
     
     def __init__(self):
         """Inicializa el colector de métricas."""
-        self.metrics = {}
-        self.start_time = time.time()
-        
+        self.metrics = defaultdict(lambda: {'counters': defaultdict(int), 'gauges': {}, 'histograms': defaultdict(list)})
+        self.lock = Lock()
+    
     def increment_counter(self, metric_name: str, value: int = 1, labels: Dict[str, str] = None):
         """
         Incrementa un contador.
@@ -112,49 +112,78 @@ class MetricsCollector:
         Args:
             metric_name (str): Nombre de la métrica
             value (int): Valor a incrementar
-            labels (Dict[str, str]): Labels adicionales
+            labels (Dict[str, str]): Labels para la métrica
         """
-        key = self._get_metric_key(metric_name, labels)
-        if key not in self.metrics:
-            self.metrics[key] = {'type': 'counter', 'value': 0, 'labels': labels or {}}
-        self.metrics[key]['value'] += value
+        with self.lock:
+            key = self._get_metric_key(metric_name, labels)
+            self.metrics[metric_name]['counters'][key] += value
     
     def set_gauge(self, metric_name: str, value: float, labels: Dict[str, str] = None):
         """
-        Establece un valor de gauge.
+        Establece un gauge.
         
         Args:
             metric_name (str): Nombre de la métrica
             value (float): Valor del gauge
-            labels (Dict[str, str]): Labels adicionales
+            labels (Dict[str, str]): Labels para la métrica
         """
-        key = self._get_metric_key(metric_name, labels)
-        self.metrics[key] = {
-            'type': 'gauge',
-            'value': value,
-            'labels': labels or {},
-            'timestamp': time.time()
-        }
+        with self.lock:
+            key = self._get_metric_key(metric_name, labels)
+            self.metrics[metric_name]['gauges'][key] = value
     
     def record_histogram(self, metric_name: str, value: float, labels: Dict[str, str] = None):
         """
-        Registra un valor de histograma.
+        Registra un valor en un histograma.
         
         Args:
             metric_name (str): Nombre de la métrica
             value (float): Valor a registrar
-            labels (Dict[str, str]): Labels adicionales
+            labels (Dict[str, str]): Labels para la métrica
         """
-        key = self._get_metric_key(metric_name, labels)
-        if key not in self.metrics:
-            self.metrics[key] = {
-                'type': 'histogram',
-                'values': [],
-                'labels': labels or {}
+        with self.lock:
+            key = self._get_metric_key(metric_name, labels)
+            self.metrics[metric_name]['histograms'][key].append(value)
+    
+    def emit_cloud_monitoring_metrics(self, document_id: str, num_vectors: int, duration: float):
+        """
+        Emite métricas específicas para Cloud Monitoring.
+        
+        Args:
+            document_id (str): ID del documento procesado
+            num_vectors (int): Número de vectores procesados
+            duration (float): Duración del procesamiento en segundos
+        """
+        labels = {
+            'document_id': document_id,
+            'environment': ENVIRONMENT,
+            'function_name': 'create_embeddings_from_chunks'
+        }
+        
+        # Métricas de latencia
+        self.record_histogram('processing_duration_seconds', duration, labels)
+        
+        # Métricas de volumen
+        self.set_gauge('vectors_processed', num_vectors, labels)
+        
+        # Métricas de throughput
+        if duration > 0:
+            throughput = num_vectors / duration
+            self.set_gauge('vectors_per_second', throughput, labels)
+        
+        # Contador de documentos procesados
+        self.increment_counter('documents_processed_total', 1, labels)
+        
+        # Log estructurado para Cloud Logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("Métricas de procesamiento", extra={
+            'jsonPayload': {
+                'document_id': document_id,
+                'num_vectors': num_vectors,
+                'duration_seconds': duration,
+                'throughput_vectors_per_second': num_vectors / duration if duration > 0 else 0,
+                'labels': labels
             }
-        self.metrics[key]['values'].append({
-            'value': value,
-            'timestamp': time.time()
         })
     
     def _get_metric_key(self, metric_name: str, labels: Dict[str, str] = None) -> str:
@@ -390,6 +419,35 @@ def monitor_function(logger: DrCecimLogger, metrics: MetricsCollector):
 # Instancias globales
 logger = DrCecimLogger()
 metrics = MetricsCollector()
+processing_monitor = ProcessingMonitor(logger, metrics)
+
+
+# Funciones de conveniencia
+def get_logger(name: str = None) -> DrCecimLogger:
+    """Obtiene un logger."""
+    if name:
+        return DrCecimLogger(name)
+    return logger
+
+
+def get_metrics() -> MetricsCollector:
+    """Obtiene el colector de métricas."""
+    return metrics
+
+
+def get_processing_monitor() -> ProcessingMonitor:
+    """Obtiene el monitor de procesamiento."""
+    return processing_monitor
+
+
+def log_system_info():
+    """Registra información del sistema."""
+    logger.info("Sistema DrCecim Upload iniciado", {
+        'environment': ENVIRONMENT,
+        'debug': DEBUG,
+        'log_level': LOG_LEVEL,
+        'timestamp': datetime.now().isoformat()
+    }) 
 processing_monitor = ProcessingMonitor(logger, metrics)
 
 

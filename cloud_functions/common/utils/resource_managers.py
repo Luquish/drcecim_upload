@@ -65,7 +65,8 @@ def with_processing_resources(
         dict: Contexto con recursos de procesamiento
     """
     import psutil
-    import signal
+    import threading
+    import os
     
     start_time = time.time()
     start_memory = psutil.virtual_memory().used
@@ -76,24 +77,50 @@ def with_processing_resources(
         'start_memory': start_memory,
         'max_memory_mb': max_memory_mb,
         'timeout_seconds': timeout_seconds,
-        'resources': []
+        'resources': [],
+        'timeout_triggered': False
     }
     
-    def timeout_handler(signum, frame):
-        raise TimeoutError(f"Procesamiento excedió el timeout de {timeout_seconds} segundos")
+    def timeout_checker():
+        """Thread para verificar timeout manualmente"""
+        if timeout_seconds:
+            time.sleep(timeout_seconds)
+            if not context.get('completed', False):
+                context['timeout_triggered'] = True
+                # En entornos serverless, la mejor opción es terminar el proceso
+                logger.error(f"Timeout de {timeout_seconds} segundos alcanzado")
+                os._exit(1)  # Terminar proceso de forma abrupta
+    
+    def memory_checker():
+        """Thread para verificar uso de memoria"""
+        if max_memory_mb:
+            while not context.get('completed', False):
+                current_memory = psutil.virtual_memory().used
+                memory_used_mb = (current_memory - start_memory) / (1024 * 1024)
+                if memory_used_mb > max_memory_mb:
+                    context['timeout_triggered'] = True
+                    logger.error(f"Límite de memoria {max_memory_mb}MB excedido")
+                    os._exit(1)
+                time.sleep(1)  # Verificar cada segundo
+    
+    timeout_thread = None
+    memory_thread = None
     
     try:
-        # Configurar timeout si se especifica
+        # Iniciar threads de monitoreo si se especifican límites
         if timeout_seconds:
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(timeout_seconds)
+            timeout_thread = threading.Thread(target=timeout_checker, daemon=True)
+            timeout_thread.start()
+        
+        if max_memory_mb:
+            memory_thread = threading.Thread(target=memory_checker, daemon=True)
+            memory_thread.start()
         
         yield context
         
     finally:
-        # Cancelar alarm si estaba configurada
-        if timeout_seconds:
-            signal.alarm(0)
+        # Marcar como completado para detener threads
+        context['completed'] = True
         
         # Limpiar recursos
         _cleanup_resources(context['resources'])

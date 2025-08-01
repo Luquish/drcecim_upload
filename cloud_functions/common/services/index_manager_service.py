@@ -152,14 +152,52 @@ class IndexManagerService:
             
             # Reconstruir índice con los vectores restantes
             dimension = existing_index.d
-            new_index = faiss.IndexFlatIP(dimension)
+            
+            # Verificar memoria disponible antes de reconstruir
+            import psutil
+            available_memory_mb = psutil.virtual_memory().available / (1024 * 1024)
+            estimated_memory_needed_mb = (existing_index.ntotal * dimension * 4) / (1024 * 1024)  # float32 = 4 bytes
+            
+            self.logger.info(f"Memoria disponible: {available_memory_mb:.2f}MB, Estimada necesaria: {estimated_memory_needed_mb:.2f}MB")
+            
+            if estimated_memory_needed_mb > available_memory_mb * 0.8:  # Usar máximo 80% de memoria disponible
+                self.logger.warning(f"Memoria insuficiente para reconstruir índice. "
+                                 f"Necesario: {estimated_memory_needed_mb:.2f}MB, "
+                                 f"Disponible: {available_memory_mb:.2f}MB")
+                # En lugar de reconstruir, retornar el índice original
+                return existing_index, existing_metadata, []
+            
+            # Detectar el tipo de índice original para mantener la coherencia
+            index_type = type(existing_index).__name__
+            self.logger.info(f"Detectado tipo de índice original: {index_type}")
+            
+            # Crear el mismo tipo de índice que el original
+            if 'IndexFlatIP' in index_type:
+                new_index = faiss.IndexFlatIP(dimension)
+            elif 'IndexFlatL2' in index_type:
+                new_index = faiss.IndexFlatL2(dimension)
+            elif 'IVFFlat' in index_type:
+                # Para IVFFlat necesitamos recrear con los mismos parámetros
+                # Por simplicidad, usamos valores por defecto
+                nlist = min(4096, max(1, existing_index.ntotal // 30))
+                quantizer = faiss.IndexFlatL2(dimension)
+                new_index = faiss.IndexIVFFlat(quantizer, dimension, nlist)
+                new_index.train(remaining_vectors)  # Entrenar con vectores restantes
+            else:
+                # Fallback a IndexFlatIP si no reconocemos el tipo
+                self.logger.warning(f"Tipo de índice no reconocido: {index_type}. Usando IndexFlatIP")
+                new_index = faiss.IndexFlatIP(dimension)
             
             # Extraer vectores que queremos mantener
             all_vectors = existing_index.reconstruct_n(0, existing_index.ntotal)
             remaining_vectors = all_vectors[remaining_indices]
             
             # Añadir vectores restantes al nuevo índice
-            new_index.add(remaining_vectors)
+            if 'IVFFlat' not in index_type:
+                new_index.add(remaining_vectors)
+            else:
+                # Para IVFFlat, ya se añadieron durante el entrenamiento
+                pass
             
             # Actualizar metadatos eliminando las filas correspondientes
             updated_metadata = existing_metadata.drop(chunks_to_remove).reset_index(drop=True)
@@ -195,10 +233,23 @@ class IndexManagerService:
             if existing_index is None:
                 # Crear nuevo índice si no existe uno previo
                 dimension = new_embeddings.shape[1]
-                faiss_index = faiss.IndexFlatIP(dimension)  # Usar producto interno
-                faiss_index.add(new_embeddings)
+                
+                # Usar la misma lógica que EmbeddingService para mantener coherencia
+                if new_embeddings.shape[0] > 10000:
+                    # Para colecciones grandes, usar IVFFlat
+                    nlist = min(int(np.sqrt(new_embeddings.shape[0])), 100)
+                    quantizer = faiss.IndexFlatL2(dimension)
+                    faiss_index = faiss.IndexIVFFlat(quantizer, dimension, nlist, faiss.METRIC_L2)
+                    faiss_index.train(new_embeddings)
+                    faiss_index.add(new_embeddings)
+                    self.logger.info(f"Nuevo índice IVFFlat creado con {faiss_index.ntotal} vectores")
+                else:
+                    # Para colecciones pequeñas, usar FlatL2
+                    faiss_index = faiss.IndexFlatL2(dimension)
+                    faiss_index.add(new_embeddings)
+                    self.logger.info(f"Nuevo índice FlatL2 creado con {faiss_index.ntotal} vectores")
+                
                 combined_metadata = new_metadata_df
-                self.logger.info(f"Nuevo índice FAISS creado con {faiss_index.ntotal} vectores")
             else:
                 # Agregar nuevos vectores al índice existente
                 existing_index.add(new_embeddings)

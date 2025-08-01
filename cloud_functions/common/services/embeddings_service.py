@@ -33,6 +33,7 @@ from datetime import datetime
 from tqdm import tqdm
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import openai
+import time
 
 from common.models.openai_model import OpenAIEmbedding
 from common.config.settings import (
@@ -94,13 +95,14 @@ class EmbeddingService:
         logger.info(f"Dimensión del modelo OpenAI: {self.embedding_dimension}")
         logger.info("OpenAI inicializado correctamente para embeddings")
     
-    def generate_embeddings(self, texts: List[str], batch_size: int = 16) -> np.ndarray:
+    def generate_embeddings(self, texts: List[str], batch_size: int = 16, use_batch_api: bool = False) -> np.ndarray:
         """
         Genera embeddings para una lista de textos usando OpenAI.
         
         Args:
             texts (List[str]): Lista de textos a procesar
             batch_size (int): Tamaño del batch para procesamiento
+            use_batch_api (bool): Si usar Batch API para lotes grandes (>10k)
             
         Returns:
             np.ndarray: Array de embeddings
@@ -111,6 +113,11 @@ class EmbeddingService:
         
         total_texts = len(texts)
         logger.info(f"Generando embeddings con OpenAI para {total_texts} textos")
+        
+        # Decidir si usar Batch API para lotes grandes
+        if use_batch_api and total_texts > 10000:
+            logger.info("Usando Batch API de OpenAI para lote grande")
+            return self._generate_embeddings_with_batch_api(texts)
         
         # Preprocesar textos
         valid_texts = self._preprocess_texts(texts)
@@ -232,6 +239,13 @@ class EmbeddingService:
         # Asegurar que los embeddings sean float32 para FAISS
         embeddings = embeddings.astype('float32')
         
+        # Normalizar vectores para similitud coseno si se usa IndexFlatIP
+        # Los embeddings de OpenAI ya vienen normalizados, pero verificamos
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        if not np.allclose(norms, 1.0, atol=1e-6):
+            logger.info("Normalizando embeddings para similitud coseno...")
+            embeddings = embeddings / norms
+        
         # Verificar si tenemos suficientes vectores para usar índices más avanzados
         if embeddings.shape[0] > 10000:
             # Para colecciones grandes, usar un índice IVF para búsqueda más rápida
@@ -245,10 +259,11 @@ class EmbeddingService:
             index.add(embeddings)
             logger.info("Índice IVFFlat creado y entrenado")
         else:
-            # Para colecciones pequeñas, usar un índice plano (más simple pero preciso)
-            index = faiss.IndexFlatL2(dimension)
+            # Para colecciones pequeñas, usar un índice plano
+            # Usar IndexFlatIP para similitud coseno con vectores normalizados
+            index = faiss.IndexFlatIP(dimension)
             index.add(embeddings)
-            logger.info("Índice FlatL2 creado")
+            logger.info("Índice FlatIP creado para similitud coseno")
         
         return index
     
@@ -420,7 +435,7 @@ class EmbeddingService:
                 'filename': filename,
                 'embeddings': embeddings,
                 'faiss_index': faiss_index,
-                'metadata': metadata,
+                'metadata': metadata.to_dict(orient='records'),
                 'metadata_summary': metadata_summary,
                 'config': config,
                 'processed_successfully': True
@@ -509,6 +524,78 @@ class EmbeddingService:
                     logger.info("Directorio temporal de embeddings limpiado")
         except Exception as e:
             logger.error(f"Error al limpiar archivos temporales: {str(e)}")
+
+    def _generate_embeddings_with_batch_api(self, texts: List[str]) -> np.ndarray:
+        """
+        Genera embeddings usando Batch API de OpenAI para lotes grandes.
+        
+        Args:
+            texts (List[str]): Lista de textos
+            
+        Returns:
+            np.ndarray: Array de embeddings
+        """
+        try:
+            # Crear job de batch
+            batch_job = openai.Batch.create(
+                input_file_id=self._create_input_file(texts),
+                endpoint="/v1/embeddings",
+                completion_window="24h"
+            )
+            
+            logger.info(f"Batch job creado: {batch_job.id}")
+            
+            # Esperar a que se complete (en producción, esto sería asíncrono)
+            while batch_job.status != "completed":
+                time.sleep(60)  # Verificar cada minuto
+                batch_job = openai.Batch.retrieve(batch_job.id)
+                
+                if batch_job.status == "failed":
+                    raise Exception(f"Batch job falló: {batch_job.error}")
+            
+            # Descargar resultados
+            results = batch_job.download()
+            embeddings = [result['embedding'] for result in results]
+            
+            return np.array(embeddings)
+            
+        except Exception as e:
+            logger.error(f"Error en Batch API: {str(e)}")
+            # Fallback a método normal
+            logger.info("Fallback a método normal de embeddings")
+            return self.generate_embeddings(texts, batch_size=16, use_batch_api=False)
+    
+    def _create_input_file(self, texts: List[str]) -> str:
+        """
+        Crea un archivo de entrada para Batch API.
+        
+        Args:
+            texts (List[str]): Lista de textos
+            
+        Returns:
+            str: ID del archivo creado
+        """
+        # Crear archivo temporal con los textos
+        import tempfile
+        import json
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.jsonl', delete=False) as f:
+            for text in texts:
+                json.dump({"input": text, "model": EMBEDDING_MODEL}, f)
+                f.write('\n')
+        
+        # Subir archivo a OpenAI
+        with open(f.name, 'rb') as file:
+            file_upload = openai.files.create(
+                file=file,
+                purpose="batch"
+            )
+        
+        # Limpiar archivo temporal
+        import os
+        os.unlink(f.name)
+        
+        return file_upload.id
 
 
 # Función de conveniencia

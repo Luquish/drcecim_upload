@@ -158,7 +158,6 @@ gcloud functions deploy process-pdf-to-chunks \
   --memory=2048MB \
   --timeout=540s \
   --max-instances=1 \
-  --max-instance-count=1 \
   --set-env-vars="GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCF_PROJECT_ID=${GCF_PROJECT_ID},OPENAI_API_KEY=${OPENAI_API_KEY},EMBEDDING_MODEL=${EMBEDDING_MODEL},API_TIMEOUT=${API_TIMEOUT},CHUNK_SIZE=${CHUNK_SIZE},CHUNK_OVERLAP=${CHUNK_OVERLAP},ENVIRONMENT=${ENVIRONMENT},LOG_LEVEL=${LOG_LEVEL},LOG_TO_DISK=false" \
   --project=${GCF_PROJECT_ID}
 
@@ -187,8 +186,6 @@ gcloud functions deploy create-embeddings-from-chunks \
   --memory=2048MB \
   --timeout=540s \
   --max-instances=1 \
-  --max-instance-count=1 \
-  --concurrency=1 \
   --set-env-vars="GCS_BUCKET_NAME=${GCS_BUCKET_NAME},GCF_PROJECT_ID=${GCF_PROJECT_ID},OPENAI_API_KEY=${OPENAI_API_KEY},EMBEDDING_MODEL=${EMBEDDING_MODEL},API_TIMEOUT=${API_TIMEOUT},CHUNK_SIZE=${CHUNK_SIZE},CHUNK_OVERLAP=${CHUNK_OVERLAP},ENVIRONMENT=${ENVIRONMENT},LOG_LEVEL=${LOG_LEVEL},LOG_TO_DISK=false" \
   --project=${GCF_PROJECT_ID}
 
