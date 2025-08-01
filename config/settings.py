@@ -75,10 +75,6 @@ class StreamlitSettings(BaseSettings):
     )
     
     # Nombres de archivos en GCS
-    GCS_FAISS_INDEX_NAME: str = Field(
-        default="faiss_index.bin",
-        description="Nombre del archivo de índice FAISS en GCS"
-    )
     GCS_METADATA_NAME: str = Field(
         default="metadata.csv",
         description="Nombre del archivo de metadatos en GCS"
@@ -251,7 +247,7 @@ GCS_EMBEDDINGS_PREFIX = settings.GCS_EMBEDDINGS_PREFIX
 GCS_METADATA_PREFIX = settings.GCS_METADATA_PREFIX
 GCS_PROCESSED_PREFIX = settings.GCS_PROCESSED_PREFIX
 GCS_TEMP_PREFIX = settings.GCS_TEMP_PREFIX
-GCS_FAISS_INDEX_NAME = settings.GCS_FAISS_INDEX_NAME
+
 GCS_METADATA_NAME = settings.GCS_METADATA_NAME
 GCS_METADATA_SUMMARY_NAME = settings.GCS_METADATA_SUMMARY_NAME
 GCS_CONFIG_NAME = settings.GCS_CONFIG_NAME

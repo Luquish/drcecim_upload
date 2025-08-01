@@ -3,14 +3,14 @@ Servicio de generación de embeddings usando OpenAI.
 
 Este módulo proporciona funcionalidades para:
 1. Generar embeddings de texto usando la API de OpenAI
-2. Crear índices FAISS para búsqueda vectorial eficiente
+2. Almacenar embeddings en PostgreSQL con pgvector
 3. Procesar chunks de documentos en lotes
 4. Manejar reintentos automáticos en caso de errores de API
 5. Almacenar embeddings y metadatos asociados
 
 Dependencias:
 - openai: Para generar embeddings usando la API
-- faiss-cpu: Para indexación y búsqueda vectorial
+- pgvector: Para almacenamiento y búsqueda vectorial en PostgreSQL
 - pandas: Para manipulación de datos
 - numpy: Para operaciones numéricas
 - tenacity: Para manejo de reintentos
@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import List, Dict, Any
 import pandas as pd
 import numpy as np
-import faiss
 import json
 from datetime import datetime
 from tqdm import tqdm
@@ -42,6 +41,7 @@ from common.config.settings import (
     API_TIMEOUT,
     TEMP_DIR
 )
+from common.services.vector_db_service import VectorDBService
 
 # Configuración de logging
 logger = logging.getLogger(__name__)
@@ -49,18 +49,19 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     """
-    Servicio para generar embeddings de texto usando OpenAI y crear índices FAISS.
+    Servicio para generar embeddings de texto usando OpenAI y almacenarlos en PostgreSQL.
     
     Esta clase maneja todo el flujo de generación de embeddings:
     1. Procesamiento de chunks de texto en lotes
     2. Generación de embeddings usando OpenAI API
-    3. Creación de índices FAISS para búsqueda vectorial
+    3. Almacenamiento en PostgreSQL con pgvector
     4. Manejo de errores y reintentos automáticos
     5. Almacenamiento de embeddings y metadatos
     
     Attributes:
         temp_dir (Path): Directorio temporal para archivos
         model (OpenAIEmbedding): Instancia del modelo de OpenAI
+        vector_db (VectorDBService): Servicio de base de datos vectorial
         
     Example:
         >>> service = EmbeddingService()
@@ -94,6 +95,10 @@ class EmbeddingService:
         self.embedding_dimension = self.model.get_sentence_embedding_dimension()
         logger.info(f"Dimensión del modelo OpenAI: {self.embedding_dimension}")
         logger.info("OpenAI inicializado correctamente para embeddings")
+        
+        # Inicializar servicio de base de datos vectorial
+        self.vector_db = VectorDBService()
+        logger.info("Servicio de base de datos vectorial inicializado")
     
     def generate_embeddings(self, texts: List[str], batch_size: int = 16, use_batch_api: bool = False) -> np.ndarray:
         """
@@ -223,64 +228,33 @@ class EmbeddingService:
         
         return all_embeddings
     
-    def create_faiss_index(self, embeddings: np.ndarray) -> faiss.Index:
+    def store_embeddings_in_db(self, embeddings: np.ndarray, metadata_df: pd.DataFrame) -> bool:
         """
-        Crea un índice FAISS para los embeddings.
+        Almacena embeddings en la base de datos PostgreSQL.
         
         Args:
             embeddings (np.ndarray): Array de embeddings
+            metadata_df (pd.DataFrame): DataFrame con metadatos
             
         Returns:
-            faiss.Index: Índice FAISS
-        """
-        dimension = embeddings.shape[1]
-        logger.info(f"Creando índice FAISS con {embeddings.shape[0]} vectores de dimensión {dimension}")
-        
-        # Asegurar que los embeddings sean float32 para FAISS
-        embeddings = embeddings.astype('float32')
-        
-        # Normalizar vectores para similitud coseno si se usa IndexFlatIP
-        # Los embeddings de OpenAI ya vienen normalizados, pero verificamos
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        if not np.allclose(norms, 1.0, atol=1e-6):
-            logger.info("Normalizando embeddings para similitud coseno...")
-            embeddings = embeddings / norms
-        
-        # Verificar si tenemos suficientes vectores para usar índices más avanzados
-        if embeddings.shape[0] > 10000:
-            # Para colecciones grandes, usar un índice IVF para búsqueda más rápida
-            nlist = min(int(np.sqrt(embeddings.shape[0])), 100)  # Número de clusters
-            quantizer = faiss.IndexFlatL2(dimension)
-            index = faiss.IndexIVFFlat(quantizer, dimension, nlist, faiss.METRIC_L2)
-            
-            # Necesita entrenamiento
-            logger.info(f"Entrenando índice IVFFlat con {nlist} clusters...")
-            index.train(embeddings)
-            index.add(embeddings)
-            logger.info("Índice IVFFlat creado y entrenado")
-        else:
-            # Para colecciones pequeñas, usar un índice plano
-            # Usar IndexFlatIP para similitud coseno con vectores normalizados
-            index = faiss.IndexFlatIP(dimension)
-            index.add(embeddings)
-            logger.info("Índice FlatIP creado para similitud coseno")
-        
-        return index
-    
-    def save_faiss_index(self, index: faiss.Index, filepath: str):
-        """
-        Guarda un índice FAISS en un archivo.
-        
-        Args:
-            index (faiss.Index): Índice FAISS
-            filepath (str): Ruta donde guardar el archivo
+            bool: True si se almacenaron exitosamente
         """
         try:
-            faiss.write_index(index, filepath)
-            logger.info(f"Índice FAISS guardado en {filepath}")
+            logger.info(f"Almacenando {len(embeddings)} embeddings en PostgreSQL")
+            
+            # Usar el servicio de base de datos vectorial
+            success = self.vector_db.store_embeddings(embeddings, metadata_df)
+            
+            if success:
+                logger.info("Embeddings almacenados exitosamente en PostgreSQL")
+            else:
+                logger.error("Error al almacenar embeddings en PostgreSQL")
+            
+            return success
+            
         except Exception as e:
-            logger.error(f"Error al guardar índice FAISS: {str(e)}")
-            raise
+            logger.error(f"Error al almacenar embeddings en PostgreSQL: {str(e)}")
+            return False
     
     def create_metadata(self, texts: List[str], filenames: List[str], 
                        chunk_indices: List[int]) -> pd.DataFrame:
@@ -412,12 +386,15 @@ class EmbeddingService:
             if embeddings.size == 0:
                 raise ValueError("No se generaron embeddings")
             
-            # Crear índice FAISS
-            faiss_index = self.create_faiss_index(embeddings)
-            
             # Crear metadatos
             metadata = self.create_metadata(texts, filenames, chunk_indices)
             metadata_summary = self.create_metadata_summary(metadata)
+            
+            # Almacenar embeddings en PostgreSQL
+            storage_success = self.store_embeddings_in_db(embeddings, metadata)
+            
+            if not storage_success:
+                raise Exception("Error al almacenar embeddings en PostgreSQL")
             
             # Crear configuración
             config = {
@@ -428,17 +405,18 @@ class EmbeddingService:
                 'num_vectors': len(texts),
                 'filename': filename,
                 'num_chunks': len(chunks),
-                'total_words': processed_doc.get('total_words', 0)
+                'total_words': processed_doc.get('total_words', 0),
+                'storage_type': 'PostgreSQL'
             }
             
             return {
                 'filename': filename,
                 'embeddings': embeddings,
-                'faiss_index': faiss_index,
                 'metadata': metadata.to_dict(orient='records'),
                 'metadata_summary': metadata_summary,
                 'config': config,
-                'processed_successfully': True
+                'processed_successfully': True,
+                'storage_success': storage_success
             }
             
         except Exception as e:
@@ -449,59 +427,18 @@ class EmbeddingService:
                 'error': str(e)
             }
     
-    def save_embeddings_data(self, embeddings_data: Dict[str, Any], 
-                           output_dir: str = None) -> Dict[str, str]:
+    def get_database_stats(self) -> Dict[str, Any]:
         """
-        Guarda todos los datos de embeddings en archivos.
+        Obtiene estadísticas de la base de datos de embeddings.
         
-        Args:
-            embeddings_data (Dict[str, Any]): Datos de embeddings
-            output_dir (str): Directorio de salida (opcional)
-            
         Returns:
-            Dict[str, str]: Diccionario con rutas de archivos guardados
+            Dict[str, Any]: Estadísticas de la base de datos
         """
-        if not embeddings_data.get('processed_successfully', False):
-            raise ValueError("Los datos de embeddings no se procesaron correctamente")
-        
-        # Usar directorio temporal si no se especifica
-        if output_dir is None:
-            output_dir = self.temp_dir / f"embeddings_{embeddings_data['filename']}"
-        else:
-            output_dir = Path(output_dir)
-            
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Definir rutas de archivos
-        files = {
-            'faiss_index': output_dir / 'faiss_index.bin',
-            'metadata': output_dir / 'metadata.csv',
-            'metadata_summary': output_dir / 'metadata_summary.csv',
-            'config': output_dir / 'config.json'
-        }
-        
         try:
-            # Guardar índice FAISS
-            self.save_faiss_index(embeddings_data['faiss_index'], str(files['faiss_index']))
-            
-            # Guardar metadatos
-            self.save_metadata(embeddings_data['metadata'], str(files['metadata']))
-            
-            # Guardar resumen de metadatos
-            self.save_metadata(embeddings_data['metadata_summary'], str(files['metadata_summary']))
-            
-            # Guardar configuración
-            self.save_config(embeddings_data['config'], str(files['config']))
-            
-            # Convertir paths a strings
-            file_paths = {k: str(v) for k, v in files.items()}
-            
-            logger.info(f"Datos de embeddings guardados en {output_dir}")
-            return file_paths
-            
+            return self.vector_db.get_database_stats()
         except Exception as e:
-            logger.error(f"Error al guardar datos de embeddings: {str(e)}")
-            raise
+            logger.error(f"Error al obtener estadísticas de la base de datos: {str(e)}")
+            return {}
     
     def cleanup_temp_files(self, directory: str = None):
         """

@@ -59,7 +59,7 @@ services:
       - GCS_TEMP_PREFIX=temp/
       
       # Nombres de archivos en GCS
-      - GCS_FAISS_INDEX_NAME=faiss_index.bin
+
       - GCS_METADATA_NAME=metadata.csv
       - GCS_CONFIG_NAME=config.json
     

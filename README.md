@@ -27,7 +27,7 @@ DrCecim Upload convierte documentos PDF en embeddings vectoriales para alimentar
 - **Document Processor**: Convierte PDF a Markdown con Marker
 - **Embedding Service**: Genera embeddings usando OpenAI
 - **Cloud Functions**: Procesamiento serverless en Google Cloud
-- **Vector Store**: Almacenamiento en GCS con índices FAISS
+- **Vector Store**: Base de datos PostgreSQL con pgvector para búsquedas vectoriales
 
 ## 🚀 Instalación Rápida
 

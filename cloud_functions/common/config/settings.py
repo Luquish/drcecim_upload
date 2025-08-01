@@ -31,7 +31,6 @@ class GoogleCloudSettings(BaseSettings):
     gcs_temp_prefix: str = 'temp/'
     
     # Nombres de archivos en GCS
-    gcs_faiss_index_name: str = 'faiss_index.bin'
     gcs_metadata_name: str = 'metadata.csv'
     gcs_metadata_summary_name: str = 'metadata_summary.csv'
     gcs_config_name: str = 'config.json'
@@ -295,7 +294,7 @@ GCS_EMBEDDINGS_PREFIX = config.google_cloud.gcs_embeddings_prefix
 GCS_METADATA_PREFIX = config.google_cloud.gcs_metadata_prefix
 GCS_PROCESSED_PREFIX = config.google_cloud.gcs_processed_prefix
 GCS_TEMP_PREFIX = config.google_cloud.gcs_temp_prefix
-GCS_FAISS_INDEX_NAME = config.google_cloud.gcs_faiss_index_name
+
 GCS_METADATA_NAME = config.google_cloud.gcs_metadata_name
 GCS_METADATA_SUMMARY_NAME = config.google_cloud.gcs_metadata_summary_name
 GCS_CONFIG_NAME = config.google_cloud.gcs_config_name

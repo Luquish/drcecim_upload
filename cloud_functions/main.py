@@ -20,7 +20,7 @@ from common.config.logging_config import setup_logging, get_logger, StructuredLo
 from common.services.embeddings_service import EmbeddingService
 from common.services.gcs_service import GCSService
 from common.services.status_service import StatusService, DocumentStatus
-from common.services.index_manager_service import IndexManagerService
+# IndexManagerService eliminado - ahora usamos PostgreSQL directamente
 from common.services.processing_service import DocumentProcessor
 from common.services.secrets_service import SecureConfigManager
 from common.utils.monitoring import get_logger as get_monitoring_logger, get_processing_monitor, log_system_info
@@ -368,7 +368,7 @@ def generate_embeddings_with_retry(embedding_service: EmbeddingService, chunks_d
 def create_embeddings_from_chunks(cloud_event):
     """
     Cloud Function que se activa por eventos de Cloud Storage.
-    Genera embeddings y actualiza el índice FAISS global.
+    Genera embeddings y los almacena en PostgreSQL.
     
     Args:
         cloud_event: Evento de Cloud Storage
@@ -392,7 +392,7 @@ def create_embeddings_from_chunks(cloud_event):
             
             processing_monitor.finish_processing(session_id, success=True)
             app_logger.info(
-                f"Embeddings procesados exitosamente. Índice actualizado: {result['total_vectors']} vectores totales",
+                f"Embeddings procesados y almacenados exitosamente en PostgreSQL",
                 {'session_id': session_id}
             )
             
@@ -471,8 +471,8 @@ def _process_embeddings_pipeline(bucket_name: str, file_name: str, session_id: s
                     # 3. Generar embeddings
                     embeddings_result = _generate_embeddings(chunks_data, temp_dir_path, session_id, document_id, status_service)
                     
-                    # 4. Gestionar índice FAISS
-                    result = _manage_faiss_index(gcs_service, embeddings_result, session_id)
+                    # 4. Gestionar almacenamiento en PostgreSQL
+                    result = _manage_postgresql_embeddings(embeddings_result, session_id)
                     
                     # 5. Actualizar estado final
                     _update_document_status_completed(status_service, document_id, result)
@@ -553,7 +553,7 @@ def _generate_embeddings(chunks_data: Dict, temp_dir: str, session_id: str,
         status_service.update_status(
             document_id, 
             DocumentStatus.PROCESSING, 
-            f"Embeddings generados exitosamente. Actualizando índice FAISS",
+            f"Embeddings generados exitosamente. Almacenando en PostgreSQL",
             "embeddings_generated",
             metadata={
                 'embedding_dimension': embeddings_result.get('config', {}).get('dimension', 0),
@@ -564,59 +564,46 @@ def _generate_embeddings(chunks_data: Dict, temp_dir: str, session_id: str,
     return embeddings_result
 
 
-def _manage_faiss_index(gcs_service: GCSService, embeddings_result: Dict, session_id: str) -> Dict[str, Any]:
+def _manage_postgresql_embeddings(embeddings_result: Dict, session_id: str) -> Dict[str, Any]:
     """
-    Gestiona la carga, actualización y guardado del índice FAISS.
+    Gestiona el almacenamiento de embeddings en PostgreSQL.
     """
-    index_manager = IndexManagerService(gcs_service)
+    from common.services.vector_db_service import VectorDBService
     
-    # Cargar índice existente
-    app_logger.info("Cargando índice FAISS existente", {'session_id': session_id})
-    existing_index, existing_metadata, index_exists = index_manager.load_existing_index()
-    
-    processing_monitor.log_step(session_id, "existing_index_loaded", {
-        'index_exists': index_exists,
-        'existing_vectors': existing_index.ntotal if existing_index else 0
-    })
-    
-    # Eliminar chunks viejos del mismo documento si existen
-    document_id = embeddings_result.get('config', {}).get('filename', '').replace('.pdf', '')
-    if document_id and existing_index is not None:
-        app_logger.info(f"Eliminando chunks viejos del documento: {document_id}", {'session_id': session_id})
-        existing_index, existing_metadata, removed_chunks = index_manager.remove_old_document_chunks(
-            existing_index, existing_metadata, document_id
-        )
+    try:
+        # Inicializar servicio de base de datos vectorial
+        vector_db = VectorDBService()
         
-        processing_monitor.log_step(session_id, "old_chunks_removed", {
-            'document_id': document_id,
-            'removed_chunks_count': len(removed_chunks),
-            'remaining_vectors': existing_index.ntotal if existing_index else 0
+        # Eliminar embeddings viejos del mismo documento si existen
+        document_id = embeddings_result.get('config', {}).get('filename', '').replace('.pdf', '')
+        if document_id:
+            app_logger.info(f"Eliminando embeddings viejos del documento: {document_id}", {'session_id': session_id})
+            removed_success = vector_db.delete_document_embeddings(document_id)
+            
+            processing_monitor.log_step(session_id, "old_embeddings_removed", {
+                'document_id': document_id,
+                'removal_success': removed_success
+            })
+        
+        # Los embeddings ya fueron almacenados en PostgreSQL por el EmbeddingService
+        # Solo necesitamos obtener estadísticas
+        app_logger.info("Verificando almacenamiento en PostgreSQL", {'session_id': session_id})
+        stats = vector_db.get_database_stats()
+        
+        processing_monitor.log_step(session_id, "postgresql_verified", {
+            'total_embeddings': stats.get('total_embeddings', 0),
+            'unique_documents': stats.get('unique_documents', 0)
         })
-    
-    # Actualizar índice FAISS
-    app_logger.info("Actualizando índice FAISS", {'session_id': session_id})
-    updated_index, updated_metadata = index_manager.update_index(
-        existing_index, 
-        existing_metadata,
-        embeddings_result['embeddings'],
-        embeddings_result['metadata']
-    )
-    
-    processing_monitor.log_step(session_id, "index_updated", {
-        'total_vectors': updated_index.ntotal,
-        'total_metadata_records': len(updated_metadata)
-    })
-    
-    # Guardar índice actualizado en GCS
-    app_logger.info("Guardando índice actualizado en GCS", {'session_id': session_id})
-    uploaded_files = index_manager.save_index(updated_index, updated_metadata)
-    
-    processing_monitor.log_step(session_id, "index_saved", {'uploaded_files': uploaded_files})
-    
-    return {
-        'total_vectors': updated_index.ntotal,
-        'uploaded_files': uploaded_files
-    }
+        
+        return {
+            'total_vectors': stats.get('total_embeddings', 0),
+            'unique_documents': stats.get('unique_documents', 0),
+            'storage_type': 'PostgreSQL'
+        }
+        
+    except Exception as e:
+        app_logger.error(f"Error gestionando embeddings en PostgreSQL: {str(e)}", {'session_id': session_id})
+        raise
 
 
 def _update_document_status_completed(status_service: StatusService, document_id: str, result: Dict):
@@ -627,7 +614,7 @@ def _update_document_status_completed(status_service: StatusService, document_id
         status_service.update_status(
             document_id, 
             DocumentStatus.COMPLETED, 
-            f"Procesamiento completo. Índice FAISS actualizado con {result['total_vectors']} vectores totales",
+            f"Procesamiento completo. Base de datos PostgreSQL actualizada con {result['total_vectors']} vectores totales",
             "embeddings_completed",
             metadata={
                 'total_vectors': result['total_vectors'],

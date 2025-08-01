@@ -9,7 +9,7 @@ from typing import Dict, List, Any, Optional
 from google.cloud import storage
 import pandas as pd
 import numpy as np
-import faiss
+
 import json
 
 from config.settings import (
@@ -19,7 +19,7 @@ from config.settings import (
     GCS_METADATA_PREFIX,
     GCS_PROCESSED_PREFIX,
     GCS_TEMP_PREFIX,
-    GCS_FAISS_INDEX_NAME,
+
     GCS_METADATA_NAME,
     GCS_METADATA_SUMMARY_NAME,
     GCS_CONFIG_NAME,
@@ -388,129 +388,9 @@ class GCSService:
         except Exception as e:
             logger.error(f"Error al obtener metadatos: {str(e)}")
             raise
-    
-    def upload_embeddings_data(self, embeddings_data: Dict[str, Any]) -> Dict[str, str]:
-        """
-        Sube todos los datos de embeddings a GCS.
-        
-        Args:
-            embeddings_data (Dict[str, Any]): Datos de embeddings
-            
-        Returns:
-            Dict[str, str]: Diccionario con rutas GCS de archivos subidos
-        """
-        if not embeddings_data.get('processed_successfully', False):
-            raise ValueError("Los datos de embeddings no se procesaron correctamente")
-        
-        filename = embeddings_data.get('filename', 'unknown')
-        filename_stem = Path(filename).stem
-        
-        # Crear directorio temporal para guardar archivos
-        temp_embed_dir = self.temp_dir / f"embeddings_{filename_stem}"
-        temp_embed_dir.mkdir(parents=True, exist_ok=True)
-        
-        try:
-            # Guardar archivos temporalmente
-            temp_files = {
-                'faiss_index': temp_embed_dir / GCS_FAISS_INDEX_NAME,
-                'metadata': temp_embed_dir / GCS_METADATA_NAME,
-                'metadata_summary': temp_embed_dir / GCS_METADATA_SUMMARY_NAME,
-                'config': temp_embed_dir / GCS_CONFIG_NAME
-            }
-            
-            # Guardar índice FAISS
-            faiss.write_index(embeddings_data['faiss_index'], str(temp_files['faiss_index']))
-            
-            # Guardar metadatos
-            embeddings_data['metadata'].to_csv(temp_files['metadata'], index=False)
-            embeddings_data['metadata_summary'].to_csv(temp_files['metadata_summary'], index=False)
-            
-            # Guardar configuración
-            with open(temp_files['config'], 'w') as f:
-                json.dump(embeddings_data['config'], f, indent=2)
-            
-            # Definir rutas GCS
-            gcs_paths = {
-                'faiss_index': f"{GCS_EMBEDDINGS_PREFIX}{GCS_FAISS_INDEX_NAME}",
-                'metadata': f"{GCS_METADATA_PREFIX}{GCS_METADATA_NAME}",
-                'metadata_summary': f"{GCS_METADATA_PREFIX}{GCS_METADATA_SUMMARY_NAME}",
-                'config': f"{GCS_EMBEDDINGS_PREFIX}{GCS_CONFIG_NAME}"
-            }
-            
-            # Subir archivos a GCS
-            uploaded_files = {}
-            for file_type, local_path in temp_files.items():
-                gcs_path = gcs_paths[file_type]
-                
-                if self.upload_file(str(local_path), gcs_path):
-                    uploaded_files[file_type] = f"gs://{self.bucket_name}/{gcs_path}"
-                else:
-                    raise RuntimeError(f"Error al subir {file_type} a GCS")
-            
-            logger.info(f"Datos de embeddings subidos exitosamente para {filename}")
-            return uploaded_files
-            
-        except Exception as e:
-            logger.error(f"Error al subir datos de embeddings: {str(e)}")
-            raise
-        finally:
-            # Limpiar archivos temporales
-            self._cleanup_directory(temp_embed_dir)
-    
-    def load_embeddings_data(self) -> Dict[str, Any]:
-        """
-        Carga los datos de embeddings desde GCS.
-        
-        Returns:
-            Dict[str, Any]: Diccionario con los datos de embeddings cargados
-        """
-        try:
-            # Definir rutas GCS
-            gcs_paths = {
-                'faiss_index': f"{GCS_EMBEDDINGS_PREFIX}{GCS_FAISS_INDEX_NAME}",
-                'metadata': f"{GCS_METADATA_PREFIX}{GCS_METADATA_NAME}",
-                'config': f"{GCS_EMBEDDINGS_PREFIX}{GCS_CONFIG_NAME}"
-            }
-            
-            # Verificar que todos los archivos existan
-            for file_type, gcs_path in gcs_paths.items():
-                if not self.file_exists(gcs_path):
-                    raise FileNotFoundError(f"No se encontró {file_type} en GCS: {gcs_path}")
-            
-            # Descargar archivos
-            temp_files = {}
-            for file_type, gcs_path in gcs_paths.items():
-                temp_files[file_type] = self.download_file(gcs_path)
-            
-            # Cargar índice FAISS
-            faiss_index = faiss.read_index(temp_files['faiss_index'])
-            logger.info(f"Índice FAISS cargado con {faiss_index.ntotal} vectores")
-            
-            # Cargar metadatos
-            metadata = pd.read_csv(temp_files['metadata'])
-            logger.info(f"Metadatos cargados con {len(metadata)} registros")
-            
-            # Cargar configuración
-            with open(temp_files['config'], 'r') as f:
-                config = json.load(f)
-            
-            return {
-                'faiss_index': faiss_index,
-                'metadata': metadata,
-                'config': config,
-                'loaded_successfully': True
-            }
-            
-        except Exception as e:
-            logger.error(f"Error al cargar datos de embeddings desde GCS: {str(e)}")
-            raise
-        finally:
-            # Limpiar archivos temporales
-            for temp_file in temp_files.values():
-                try:
-                    os.remove(temp_file)
-                except (OSError, FileNotFoundError, PermissionError) as e:
-                    logger.debug(f"No se pudo eliminar archivo temporal {temp_file}: {e}")
+
+
+
     
     def _cleanup_directory(self, directory: Path):
         """
@@ -555,32 +435,4 @@ class GCSService:
             raise
 
 
-# Funciones de conveniencia
-def upload_embeddings_to_gcs(embeddings_data: Dict[str, Any], 
-                           bucket_name: str = None) -> Dict[str, str]:
-    """
-    Función de conveniencia para subir datos de embeddings a GCS.
-    
-    Args:
-        embeddings_data (Dict[str, Any]): Datos de embeddings
-        bucket_name (str): Nombre del bucket (opcional)
-        
-    Returns:
-        Dict[str, str]: Diccionario con rutas GCS de archivos subidos
-    """
-    service = GCSService(bucket_name)
-    return service.upload_embeddings_data(embeddings_data)
-
-
-def load_embeddings_from_gcs(bucket_name: str = None) -> Dict[str, Any]:
-    """
-    Función de conveniencia para cargar datos de embeddings desde GCS.
-    
-    Args:
-        bucket_name (str): Nombre del bucket (opcional)
-        
-    Returns:
-        Dict[str, Any]: Diccionario con los datos de embeddings cargados
-    """
-    service = GCSService(bucket_name)
-    return service.load_embeddings_data() 
+ 

@@ -48,9 +48,9 @@ cloud_functions/
 **Dependencias específicas**: `marker-pdf`
 
 ### 2. create_embeddings
-**Función**: Genera embeddings y actualiza el índice FAISS
+**Función**: Genera embeddings y los almacena en PostgreSQL
 **Trigger**: Cloud Storage (eventos de archivos de chunks procesados)
-**Dependencias específicas**: `openai`, `numpy`, `faiss-cpu`
+**Dependencias específicas**: `openai`, `numpy`, `pgvector`, `sqlalchemy`
 
 ## Deployment
 

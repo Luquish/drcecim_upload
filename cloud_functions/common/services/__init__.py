@@ -2,4 +2,4 @@
 Módulo de servicios para el sistema DrCecim Upload.
 """
 
-from .index_manager_service import IndexManagerService 
+from .vector_db_service import VectorDBService 

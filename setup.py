@@ -18,7 +18,12 @@ install_requires = [
     
     # AI/ML Libraries
     "openai>=1.3.0,<1.15.0",
-    "faiss-cpu>=1.7.4,<1.8.0",
+    
+    # PostgreSQL y vectores
+    "pgvector>=0.2.4,<0.3.0",
+    "cloud-sql-python-connector[pg8000]>=1.3.4,<1.4.0",
+    "sqlalchemy>=2.0.23,<2.1.0",
+    "pg8000>=1.29.8,<1.30.0",
     
     # File Processing
     "python-magic>=0.4.27,<0.5.0",
