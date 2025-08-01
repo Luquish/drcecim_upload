@@ -93,8 +93,9 @@ def create_tables(engine):
     """
     try:
         # Crear extensión pgvector si no existe
+        from sqlalchemy import text
         with engine.connect() as conn:
-            conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
             conn.commit()
             logger.info("Extensión pgvector verificada/creada")
         

@@ -127,6 +127,24 @@ class MonitoringSettings(BaseSettings):
         env_prefix = ''
 
 
+class DatabaseSettings(BaseSettings):
+    """Configuración de base de datos PostgreSQL."""
+    
+    # Configuración de base de datos
+    db_user: str = Field(default='raguser', env='DB_USER')
+    db_pass: str = Field(default='', env='DB_PASS')
+    db_name: str = Field(default='ragdb', env='DB_NAME')
+    db_host: str = Field(default='localhost', env='DB_HOST')
+    db_port: str = Field(default='5432', env='DB_PORT')
+    
+    # Cloud SQL específico
+    cloud_sql_connection_name: str = Field(default='', env='CLOUD_SQL_CONNECTION_NAME')
+    db_private_ip: str = Field(default='false', env='DB_PRIVATE_IP')
+
+    class Config:
+        env_prefix = ''
+
+
 class AppSettings(BaseSettings):
     """Configuración general de la aplicación."""
     
@@ -150,6 +168,7 @@ class DrCecimConfig(BaseSettings):
     server: ServerSettings = ServerSettings()
     logging: LoggingSettings = LoggingSettings()
     monitoring: MonitoringSettings = MonitoringSettings()
+    database: DatabaseSettings = DatabaseSettings()
     app: AppSettings = AppSettings()
 
     class Config:
@@ -170,6 +189,12 @@ class DrCecimConfig(BaseSettings):
 
     def _create_directories(self):
         """Crear los directorios necesarios para el funcionamiento del sistema."""
+        # Solo crear directorios si no estamos en Cloud Functions
+        import os
+        if os.getenv("LOG_TO_DISK") == "false":
+            # En Cloud Functions, solo usar /tmp
+            return
+            
         dirs_to_create = [
             self.processing.temp_dir,
             self.processing.processed_dir,
@@ -177,7 +202,14 @@ class DrCecimConfig(BaseSettings):
         ]
         
         for dir_path in dirs_to_create:
-            Path(dir_path).mkdir(parents=True, exist_ok=True)
+            try:
+                Path(dir_path).mkdir(parents=True, exist_ok=True)
+            except (OSError, PermissionError) as e:
+                # Log pero no fallar en Cloud Functions
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"No se pudo crear directorio {dir_path}: {e}")
+                pass
 
     def validate_config(self):
         """Valida que todas las variables de entorno críticas estén configuradas."""
@@ -237,6 +269,15 @@ class DrCecimConfig(BaseSettings):
                 'enabled': self.monitoring.enabled,
                 'interval': self.monitoring.interval,
             },
+            'database': {
+                'db_user': self.database.db_user,
+                'db_pass': self.database.db_pass,
+                'db_name': self.database.db_name,
+                'db_host': self.database.db_host,
+                'db_port': self.database.db_port,
+                'cloud_sql_connection_name': self.database.cloud_sql_connection_name,
+                'db_private_ip': self.database.db_private_ip,
+            },
             'app': {
                 'debug': self.app.debug,
                 'environment': self.app.environment,
@@ -285,6 +326,15 @@ MONITORING_INTERVAL = config.monitoring.interval
 
 DEBUG = config.app.debug
 ENVIRONMENT = config.app.environment
+
+# Variables de base de datos
+DB_USER = config.database.db_user
+DB_PASS = config.database.db_pass
+DB_NAME = config.database.db_name
+DB_HOST = config.database.db_host
+DB_PORT = config.database.db_port
+CLOUD_SQL_CONNECTION_NAME = config.database.cloud_sql_connection_name
+DB_PRIVATE_IP = config.database.db_private_ip
 
 # GCS constants optimizados
 GCS_UPLOADS_PREFIX = config.google_cloud.gcs_uploads_prefix

@@ -16,7 +16,7 @@ tenacity>=8.2.0
 psutil>=5.9.0
 
 # Dependencias de process_pdf
-marker-pdf==0.2.2
+marker-pdf>=1.8.0
 
 # Dependencias de create_embeddings (migrado a PostgreSQL)
 openai>=1.3.0

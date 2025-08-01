@@ -15,16 +15,13 @@ import json
 from config.settings import (
     GCS_BUCKET_NAME,
     GCS_CREDENTIALS_PATH,
-    GCS_EMBEDDINGS_PREFIX,
-    GCS_METADATA_PREFIX,
-    GCS_PROCESSED_PREFIX,
-    GCS_TEMP_PREFIX,
-
-    GCS_METADATA_NAME,
-    GCS_METADATA_SUMMARY_NAME,
-    GCS_CONFIG_NAME,
     TEMP_DIR
 )
+
+# Constantes deprecated - mantenidas para compatibilidad temporal
+GCS_EMBEDDINGS_PREFIX = 'embeddings/'  # DEPRECATED - Todo migrado a PostgreSQL
+GCS_METADATA_PREFIX = 'metadata/'      # DEPRECATED - Todo migrado a PostgreSQL  
+GCS_PROCESSED_PREFIX = 'processed/'    # DEPRECATED - Todo migrado a PostgreSQL
 
 # Configurar logger
 logger = logging.getLogger(__name__)
@@ -49,42 +46,13 @@ class GCSService:
         if not self.bucket_name:
             raise ValueError("Se requiere el nombre del bucket de GCS (GCS_BUCKET_NAME)")
         
-        # Configurar credenciales para diferentes entornos
-        # 1. Desarrollo local: Usar archivo de credenciales
-        # 2. Streamlit Cloud: Usar credenciales JSON en variable de entorno
-        # 3. Cloud Functions: Usar cuenta de servicio automática
-        
-        credentials_configured = False
-        
-        # Verificar si hay credenciales JSON en variable de entorno (Streamlit Cloud)
-        gcs_credentials_json = os.getenv('GCS_CREDENTIALS_JSON')
-        if gcs_credentials_json:
-            try:
-                import tempfile
-                import json
-                
-                # Crear archivo temporal con las credenciales
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-                    json.dump(json.loads(gcs_credentials_json), f)
-                    temp_credentials_path = f.name
-                
-                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_credentials_path
-                logger.info("Credenciales configuradas desde variable de entorno GCS_CREDENTIALS_JSON")
-                credentials_configured = True
-                
-            except Exception as e:
-                logger.warning(f"No se pudieron configurar credenciales desde GCS_CREDENTIALS_JSON: {e}")
-        
-        # Si no hay credenciales JSON, intentar con archivo local
-        if not credentials_configured and self.credentials_path and os.path.exists(self.credentials_path):
+        # Configurar credenciales (opcional para desarrollo local)
+        # En producción (Cloud Functions/Cloud Run) usar la cuenta de servicio asignada
+        if self.credentials_path and os.path.exists(self.credentials_path):
             os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = self.credentials_path
             logger.info(f"Credenciales configuradas desde archivo: {self.credentials_path}")
-            credentials_configured = True
-        
-        # Si no hay credenciales configuradas, usar ADC (Application Default Credentials)
-        if not credentials_configured:
+        else:
             logger.info("Usando credenciales por defecto (ADC - Application Default Credentials)")
-            logger.info("Para Streamlit Cloud, configura GCS_CREDENTIALS_JSON en los secretos")
         
         # Inicializar cliente de GCS
         try:
@@ -99,8 +67,17 @@ class GCSService:
             raise
         
         # Directorio temporal para archivos descargados
-        self.temp_dir = Path(TEMP_DIR)
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        import os
+        if os.getenv("LOG_TO_DISK") == "false":
+            # En Cloud Functions usar /tmp
+            self.temp_dir = Path("/tmp")
+        else:
+            self.temp_dir = Path(TEMP_DIR)
+            try:
+                self.temp_dir.mkdir(parents=True, exist_ok=True)
+            except (OSError, PermissionError) as e:
+                logger.warning(f"No se pudo crear directorio temp {self.temp_dir}: {e}")
+                self.temp_dir = Path("/tmp")  # Fallback a /tmp
         logger.info(f"Directorio temporal: {self.temp_dir}")
     
     def list_files(self, prefix: str = "") -> List[str]:
@@ -325,7 +302,6 @@ class GCSService:
         except Exception as e:
             logger.error(f"Error de conectividad al verificar existencia del archivo: {str(e)}")
             return False
-            return False
     
     def delete_file(self, gcs_path: str) -> bool:
         """
@@ -388,7 +364,6 @@ class GCSService:
         except Exception as e:
             logger.error(f"Error al obtener metadatos: {str(e)}")
             raise
-
 
 
     

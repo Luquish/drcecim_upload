@@ -51,16 +51,44 @@ def get_connection():
 
 def get_engine():
     """
-    Obtiene un engine de SQLAlchemy para Cloud SQL.
+    Obtiene un engine de SQLAlchemy para Cloud SQL o PostgreSQL local.
     
     Returns:
         Engine: Engine de SQLAlchemy
     """
+    cloud_sql_conn_name = os.getenv("CLOUD_SQL_CONNECTION_NAME")
+    
+    # Si no hay CLOUD_SQL_CONNECTION_NAME o está vacío, usar conexión local
+    if not cloud_sql_conn_name:
+        # Conexión PostgreSQL local directa
+        from urllib.parse import quote_plus
+        
+        db_host = os.getenv("DB_HOST", "localhost")
+        db_port = os.getenv("DB_PORT", "5432")
+        db_user = os.getenv("DB_USER")
+        db_pass = quote_plus(os.getenv("DB_PASS"))  # Codificar caracteres especiales
+        db_name = os.getenv("DB_NAME")
+        
+        database_url = f"postgresql+pg8000://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+        
+        engine = create_engine(
+            database_url,
+            pool_size=5,
+            max_overflow=2,
+            pool_timeout=30,
+            pool_recycle=3600,
+            echo=True  # Habilitar debug para ver la conexión
+        )
+        
+        logger.info("Engine de SQLAlchemy creado para PostgreSQL local")
+        return engine
+    
+    # Usar Cloud SQL Connector para conexión cloud
     connector = get_connector()
     
     def getconn():
         return connector.connect(
-            os.getenv("CLOUD_SQL_CONNECTION_NAME"),
+            cloud_sql_conn_name,
             "pg8000",
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASS"),

@@ -67,8 +67,17 @@ class GCSService:
             raise
         
         # Directorio temporal para archivos descargados
-        self.temp_dir = Path(TEMP_DIR)
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        import os
+        if os.getenv("LOG_TO_DISK") == "false":
+            # En Cloud Functions usar /tmp
+            self.temp_dir = Path("/tmp")
+        else:
+            self.temp_dir = Path(TEMP_DIR)
+            try:
+                self.temp_dir.mkdir(parents=True, exist_ok=True)
+            except (OSError, PermissionError) as e:
+                logger.warning(f"No se pudo crear directorio temp {self.temp_dir}: {e}")
+                self.temp_dir = Path("/tmp")  # Fallback a /tmp
         logger.info(f"Directorio temporal: {self.temp_dir}")
     
     def list_files(self, prefix: str = "") -> List[str]:

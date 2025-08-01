@@ -32,7 +32,10 @@ def get_logging_config(
     if log_dir is None:
         log_dir = Path("logs")
     
-    log_dir.mkdir(exist_ok=True)
+    # Solo crear directorio si no estamos en Cloud Functions
+    import os
+    if os.getenv("LOG_TO_DISK") != "false":
+        log_dir.mkdir(exist_ok=True)
     
     if log_format is None:
         log_format = "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
@@ -238,7 +241,7 @@ def setup_development_logging() -> None:
     setup_logging(
         log_level="DEBUG",
         log_dir=Path("logs"),
-        enable_file_logging=True,
+        enable_file_logging=False,  # Deshabilitado por defecto para Cloud Functions
         enable_console_logging=True
     )
 

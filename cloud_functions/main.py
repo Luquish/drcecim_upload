@@ -22,7 +22,6 @@ from common.services.gcs_service import GCSService
 from common.services.status_service import StatusService, DocumentStatus
 # IndexManagerService eliminado - ahora usamos PostgreSQL directamente
 from common.services.processing_service import DocumentProcessor
-from common.services.secrets_service import SecureConfigManager
 from common.utils.monitoring import get_logger as get_monitoring_logger, get_processing_monitor, log_system_info
 from common.utils.temp_file_manager import temp_dir
 from common.utils.resource_managers import (
@@ -37,9 +36,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 setup_logging(log_level="INFO", enable_file_logging=False, enable_console_logging=True)
 logger = get_logger(__name__)
 structured_logger = StructuredLogger("main")
-
-# Inicializar configurador seguro
-config_manager = SecureConfigManager()
 
 # Variables globales para pre-warm (cold-start optimization)
 _embedding_service = None
@@ -64,35 +60,12 @@ def get_gcs_service() -> GCSService:
     """Obtiene una instancia global del servicio de GCS."""
     global _gcs_service
     if _gcs_service is None:
-        bucket_name = get_config_value('GCS_BUCKET_NAME', '')
-        _gcs_service = GCSService(bucket_name)
+        from common.config.settings import GCS_BUCKET_NAME
+        _gcs_service = GCSService(GCS_BUCKET_NAME)
     return _gcs_service
 
-def get_config_value(key: str, default: str = None) -> str:
-    """
-    Obtiene un valor de configuración de forma segura usando SecretsService.
-    
-    Args:
-        key (str): Clave de configuración
-        default (str): Valor por defecto si no se encuentra
-        
-    Returns:
-        str: Valor de configuración
-    """
-    try:
-        value = config_manager.get_config_value(key, default)
-        if value:
-            logger.debug(f"Configuración obtenida de forma segura: {key}")
-        else:
-            logger.warning(f"Configuración no encontrada: {key}, usando valor por defecto: {default}")
-        return value or default
-    except Exception as e:
-        logger.error(f"Error obteniendo configuración {key}: {str(e)}")
-        return default
-
-# Configurar parámetros de procesamiento usando SecretsService
-CHUNK_SIZE = int(get_config_value('CHUNK_SIZE', '250'))
-CHUNK_OVERLAP = int(get_config_value('CHUNK_OVERLAP', '50'))
+# Configurar parámetros de procesamiento usando configuración centralizada
+from common.config.settings import CHUNK_SIZE, CHUNK_OVERLAP
 
 # Inicializar monitoreo para create_embeddings
 app_logger = get_monitoring_logger("create_embeddings_function")
@@ -122,22 +95,22 @@ def is_pdf_file(file_name: str) -> bool:
 def process_pdf_document(pdf_path: str, filename: str) -> Dict:
     """Procesa un documento PDF completo usando DocumentProcessor."""
     try:
-        structured_logger.info("Iniciando procesamiento de documento PDF", {
-            'filename': filename,
-            'pdf_path': pdf_path,
-            'chunk_size': CHUNK_SIZE,
-            'chunk_overlap': CHUNK_OVERLAP
-        })
+        structured_logger.info("Iniciando procesamiento de documento PDF", 
+            filename=filename,
+            pdf_path=pdf_path,
+            chunk_size=CHUNK_SIZE,
+            chunk_overlap=CHUNK_OVERLAP
+        )
         
         # Usar DocumentProcessor del processing_service
         processor = DocumentProcessor()
         result = processor.process_document_complete(pdf_path)
         
         if not result.get('processed_successfully', False):
-            structured_logger.error("Error en procesamiento de PDF con DocumentProcessor", {
-                'filename': filename,
-                'error': result.get('error', 'Error desconocido')
-            })
+            structured_logger.error("Error en procesamiento de PDF con DocumentProcessor", 
+                filename=filename,
+                error=result.get('error', 'Error desconocido')
+            )
             return {
                 'filename': filename,
                 'chunks': [],
@@ -173,21 +146,21 @@ def process_pdf_document(pdf_path: str, filename: str) -> Dict:
             }
         }
         
-        structured_logger.info("PDF procesado exitosamente con DocumentProcessor", {
-            'filename': filename,
-            'num_chunks': len(adapted_chunks),
-            'total_words': result.get('total_words', 0),
-            'processing_method': 'markdown_enhanced'
-        })
+        structured_logger.info("PDF procesado exitosamente con DocumentProcessor", 
+            filename=filename,
+            num_chunks=len(adapted_chunks),
+            total_words=result.get('total_words', 0),
+            processing_method='markdown_enhanced'
+        )
         return adapted_result
         
     except Exception as e:
-        structured_logger.error("Error crítico procesando PDF", {
-            'filename': filename,
-            'pdf_path': pdf_path,
-            'error': str(e),
-            'error_type': type(e).__name__
-        })
+        structured_logger.error("Error crítico procesando PDF", 
+            filename=filename,
+            pdf_path=pdf_path,
+            error=str(e),
+            error_type=type(e).__name__
+        )
         return {
             'filename': filename,
             'chunks': [],
@@ -227,13 +200,13 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
             return "ignored", 204
         
         # Debug: Log completo del evento
-        structured_logger.info("Evento completo recibido", {
-            'cloud_event_type': getattr(cloud_event, 'type', 'unknown'),
-            'cloud_event_data': str(event_data),
-            'bucket_name': bucket_name,
-            'file_name': file_name,
-            'event_type': event_type
-        })
+        structured_logger.info("Evento completo recibido", 
+            cloud_event_type=getattr(cloud_event, 'type', 'unknown'),
+            cloud_event_data=str(event_data),
+            bucket_name=bucket_name,
+            file_name=file_name,
+            event_type=event_type
+        )
                 
         # Inicializar cliente de Storage
         storage_client = storage.Client()
@@ -248,25 +221,25 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
                     temp_file_path = Path(temp_dir_path) / Path(file_name).name
                     
                     # Descargar archivo PDF
-                    structured_logger.info("Iniciando descarga de PDF", {
-                        'file_name': file_name,
-                        'temp_path': str(temp_file_path)
-                    })
+                    structured_logger.info("Iniciando descarga de PDF", 
+                        file_name=file_name,
+                        temp_path=str(temp_file_path)
+                    )
                     blob.download_to_filename(str(temp_file_path))
                     
                     # Procesar PDF
-                    structured_logger.info("Iniciando procesamiento de PDF", {
-                        'file_name': file_name,
-                        'chunk_size': CHUNK_SIZE,
-                        'chunk_overlap': CHUNK_OVERLAP
-                    })
+                    structured_logger.info("Iniciando procesamiento de PDF", 
+                        file_name=file_name,
+                        chunk_size=CHUNK_SIZE,
+                        chunk_overlap=CHUNK_OVERLAP
+                    )
                     result = process_pdf_document(str(temp_file_path), file_name)
                     
                     if not result.get('processed_successfully', False):
-                        structured_logger.error("Error en procesamiento de PDF", {
-                            'file_name': file_name,
-                            'error': result.get('error', 'Error desconocido')
-                        })
+                        structured_logger.error("Error en procesamiento de PDF", 
+                            file_name=file_name,
+                            error=result.get('error', 'Error desconocido')
+                        )
                         return
                     
                     # Preparar datos para subir
@@ -284,30 +257,30 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
                     chunks_filename = f"{Path(file_name).stem}_chunks.json"
                     chunks_gcs_path = f"processed/{chunks_filename}"
                     
-                    structured_logger.info("Subiendo chunks procesados", {
-                        'file_name': file_name,
-                        'chunks_path': chunks_gcs_path,
-                        'num_chunks': result['num_chunks'],
-                        'total_words': result['total_words']
-                    })
+                    structured_logger.info("Subiendo chunks procesados", 
+                        file_name=file_name,
+                        chunks_path=chunks_gcs_path,
+                        num_chunks=result['num_chunks'],
+                        total_words=result['total_words']
+                    )
                     chunks_blob = bucket.blob(chunks_gcs_path)
                     chunks_blob.upload_from_string(
                         json.dumps(chunks_data, ensure_ascii=False, indent=2),
                         content_type='application/json'
                     )
                     
-                    structured_logger.info("PDF procesado exitosamente", {
-                        'file_name': file_name,
-                        'chunks_path': chunks_gcs_path,
-                        'num_chunks': result['num_chunks'],
-                        'processing_time': 'completed'
-                    })
+                    structured_logger.info("PDF procesado exitosamente", 
+                        file_name=file_name,
+                        chunks_path=chunks_gcs_path,
+                        num_chunks=result['num_chunks'],
+                        processing_time='completed'
+                    )
     
     except Exception as e:
-        structured_logger.error("Error crítico en process_pdf_to_chunks", {
-            'error': str(e),
-            'file_name': file_name if 'file_name' in locals() else 'unknown'
-        })
+        structured_logger.error("Error crítico en process_pdf_to_chunks", 
+            error=str(e),
+            file_name=file_name if 'file_name' in locals() else 'unknown'
+        )
         raise
 
 
@@ -489,12 +462,12 @@ def _process_embeddings_pipeline(bucket_name: str, file_name: str, session_id: s
                     return result
                     
                 except Exception as e:
-                    structured_logger.error("Error en pipeline de embeddings", {
-                        'session_id': session_id,
-                        'file_name': file_name,
-                        'error': str(e),
-                        'error_type': type(e).__name__
-                    })
+                    structured_logger.error("Error en pipeline de embeddings", 
+                        session_id=session_id,
+                        file_name=file_name,
+                        error=str(e),
+                        error_type=type(e).__name__
+                    )
                     raise
 
 

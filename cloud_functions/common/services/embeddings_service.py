@@ -457,7 +457,11 @@ class EmbeddingService:
                 import shutil
                 if self.temp_dir.exists():
                     shutil.rmtree(self.temp_dir)
-                    self.temp_dir.mkdir(parents=True, exist_ok=True)
+                    try:
+                        self.temp_dir.mkdir(parents=True, exist_ok=True)
+                    except (OSError, PermissionError):
+                        # Usar /tmp en Cloud Functions
+                        self.temp_dir = Path("/tmp")
                     logger.info("Directorio temporal de embeddings limpiado")
         except Exception as e:
             logger.error(f"Error al limpiar archivos temporales: {str(e)}")

@@ -1,283 +1,329 @@
 """
-Configuración específica para la aplicación Streamlit.
+Configuración central para el sistema DrCecim Upload usando Pydantic.
 """
+
 import os
-from typing import Optional
+from pathlib import Path
+from typing import List, Optional
+from pydantic import Field, validator
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from dotenv import load_dotenv
+
+# Cargar variables de entorno desde archivo .env
+load_dotenv()
+
+
+class GoogleCloudSettings(BaseSettings):
+    """Configuración de Google Cloud Services."""
+    
+    # Google Cloud Storage
+    gcs_bucket_name: str = Field(default='drcecim-chatbot-storage', env='GCS_BUCKET_NAME')
+    gcs_credentials_path: Optional[str] = Field(default=None, env='GCS_CREDENTIALS_PATH')
+    
+    # Google Cloud Functions
+    gcf_region: str = Field(default='us-central1', env='GCF_REGION')
+    gcf_project_id: Optional[str] = Field(default=None, env='GCF_PROJECT_ID')
+    
+    # Estructura de carpetas en GCS optimizada
+    gcs_uploads_prefix: str = 'uploads/'
+    gcs_temp_prefix: str = 'temp/'
+    # DEPRECATED: embeddings/, metadata/, processed/ - Todo migrado a PostgreSQL
+    
+    # Nombres de archivos en GCS
+    gcs_metadata_name: str = 'metadata.csv'
+    gcs_metadata_summary_name: str = 'metadata_summary.csv'
+    gcs_config_name: str = 'config.json'
+
+    class Config:
+        env_prefix = ''
+    
+
+
+
+class OpenAISettings(BaseSettings):
+    """Configuración de OpenAI API."""
+    
+    openai_api_key: Optional[str] = Field(default=None, env='OPENAI_API_KEY')
+    embedding_model: str = Field(default='text-embedding-3-small', env='EMBEDDING_MODEL')
+    api_timeout: int = Field(default=30, env='API_TIMEOUT')
+    
+    # Configuración de generación de texto
+    max_output_tokens: int = Field(default=2048, env='MAX_OUTPUT_TOKENS')
+    temperature: float = Field(default=0.7, env='TEMPERATURE')
+    top_p: float = Field(default=1.0, env='TOP_P')
+
+    class Config:
+        env_prefix = ''
+
+
+
+
+class ProcessingSettings(BaseSettings):
+    """Configuración de procesamiento de documentos."""
+    
+    # Configuración de chunking
+    chunk_size: int = Field(default=250, env='CHUNK_SIZE')
+    chunk_overlap: int = Field(default=50, env='CHUNK_OVERLAP')
+    
+    # Directorios - usar rutas relativas más seguras por defecto
+    temp_dir: str = Field(default='./temp', env='TEMP_DIR')
+    processed_dir: str = Field(default='./data/processed', env='PROCESSED_DIR')
+    embeddings_dir: str = Field(default='./data/embeddings', env='EMBEDDINGS_DIR')
+    
+    # Configuración del dispositivo
+    device: str = Field(default='cpu', env='DEVICE')
+
+    class Config:
+        env_prefix = ''
+
+
 
 
 class StreamlitSettings(BaseSettings):
-    """
-    Configuración específica para la aplicación Streamlit.
-    """
+    """Configuración de la aplicación Streamlit."""
     
-    # =============================================================================
-    # CONFIGURACIÓN DE STREAMLIT
-    # =============================================================================
-    
-    # Configuración de la aplicación
-    STREAMLIT_TITLE: str = Field(
-        default="DrCecim - Carga de Documentos",
-        description="Título de la aplicación Streamlit"
+    title: str = Field(default='DrCecim - Carga de Documentos', env='STREAMLIT_TITLE')
+    description: str = Field(
+        default='Sistema de carga y procesamiento de documentos PDF para el chatbot DrCecim',
+        env='STREAMLIT_DESCRIPTION'
     )
-    STREAMLIT_DESCRIPTION: str = Field(
-        default="Sistema de carga y procesamiento de documentos PDF para el chatbot DrCecim",
-        description="Descripción de la aplicación"
-    )
-    
-    # Límites de archivo
-    MAX_FILE_SIZE_MB: int = Field(
-        default=50,
-        description="Tamaño máximo de archivo en MB"
-    )
-    
-    # Configuración de la interfaz
-    PAGE_ICON: str = Field(
-        default="📚",
-        description="Icono de la página"
-    )
-    LAYOUT: str = Field(
-        default="wide",
-        description="Layout de la aplicación"
-    )
-    
-    # =============================================================================
-    # CONFIGURACIÓN DE GOOGLE CLOUD
-    # =============================================================================
-    
-    # Google Cloud Storage
-    GCS_BUCKET_NAME: str = Field(
-        default="drcecim-chatbot-storage",
-        description="Nombre del bucket de Google Cloud Storage"
-    )
-    GCS_CREDENTIALS_PATH: Optional[str] = Field(
-        default=None,
-        description="Ruta a las credenciales de GCS"
-    )
-    
-    # Prefijos de GCS
-    GCS_EMBEDDINGS_PREFIX: str = Field(
-        default="embeddings/",
-        description="Prefijo para archivos de embeddings en GCS"
-    )
-    GCS_METADATA_PREFIX: str = Field(
-        default="metadata/",
-        description="Prefijo para archivos de metadatos en GCS"
-    )
-    GCS_PROCESSED_PREFIX: str = Field(
-        default="processed/",
-        description="Prefijo para archivos procesados en GCS"
-    )
-    GCS_TEMP_PREFIX: str = Field(
-        default="temp/",
-        description="Prefijo para archivos temporales en GCS"
-    )
-    
-    # Nombres de archivos en GCS
-    GCS_METADATA_NAME: str = Field(
-        default="metadata.csv",
-        description="Nombre del archivo de metadatos en GCS"
-    )
-    GCS_METADATA_SUMMARY_NAME: str = Field(
-        default="metadata_summary.csv",
-        description="Nombre del archivo de resumen de metadatos en GCS"
-    )
-    GCS_CONFIG_NAME: str = Field(
-        default="config.json",
-        description="Nombre del archivo de configuración en GCS"
-    )
-    
-    # Google Cloud Functions
-    GCF_REGION: str = Field(
-        default="southamerica-east1",
-        description="Región de Google Cloud Functions"
-    )
-    GCF_PROJECT_ID: str = Field(
-        default="drcecim-465823",
-        description="ID del proyecto de Google Cloud"
-    )
-    
-    # =============================================================================
-    # CONFIGURACIÓN DE OPENAI
-    # =============================================================================
-    
-    # API Keys y Modelos
-    OPENAI_API_KEY: Optional[str] = Field(
-        default=None,
-        description="API Key de OpenAI (opcional para Streamlit)"
-    )
-    PRIMARY_MODEL: str = Field(
-        default="gpt-4o-mini",
-        description="Modelo principal de OpenAI"
-    )
-    FALLBACK_MODEL: str = Field(
-        default="gpt-4.1-nano",
-        description="Modelo de respaldo"
-    )
-    EMBEDDING_MODEL: str = Field(
-        default="text-embedding-3-small",
-        description="Modelo de embeddings"
-    )
-    
-    # Parámetros de generación
-    TEMPERATURE: float = Field(
-        default=0.7,
-        description="Temperatura para generación de texto"
-    )
-    TOP_P: float = Field(
-        default=0.9,
-        description="Top-p para generación de texto"
-    )
-    TOP_K: int = Field(
-        default=50,
-        description="Top-k para generación de texto"
-    )
-    MAX_OUTPUT_TOKENS: int = Field(
-        default=300,
-        description="Número máximo de tokens de salida"
-    )
-    API_TIMEOUT: int = Field(
-        default=30,
-        description="Timeout para llamadas a la API"
-    )
-    
-    # =============================================================================
-    # CONFIGURACIÓN DE RAG
-    # =============================================================================
-    
-    # Parámetros de RAG
-    RAG_NUM_CHUNKS: int = Field(
-        default=3,
-        description="Número de chunks para RAG"
-    )
-    SIMILARITY_THRESHOLD: float = Field(
-        default=0.3,
-        description="Umbral de similitud para RAG"
-    )
-    
-    # Configuración de chunking
-    CHUNK_SIZE: int = Field(
-        default=250,
-        description="Tamaño de chunks"
-    )
-    CHUNK_OVERLAP: int = Field(
-        default=50,
-        description="Solapamiento de chunks"
-    )
-    
-    # =============================================================================
-    # CONFIGURACIÓN DE PROCESAMIENTO
-    # =============================================================================
-    
-    # Directorio temporal para procesamiento
-    TEMP_DIR: str = Field(
-        default="/tmp/drcecim_processing",
-        description="Directorio temporal para procesamiento"
-    )
-    PROCESSED_DIR: str = Field(
-        default="data/processed",
-        description="Directorio de archivos procesados"
-    )
-    EMBEDDINGS_DIR: str = Field(
-        default="data/embeddings",
-        description="Directorio de embeddings"
-    )
-    
-    # Configuración del dispositivo
-    DEVICE: str = Field(
-        default="cpu",
-        description="Dispositivo para procesamiento (auto, cuda, cpu, mps)"
-    )
-    
-    # =============================================================================
-    # CONFIGURACIÓN DE LOGGING
-    # =============================================================================
-    
-    # Configuración de logging
-    LOG_LEVEL: str = Field(
-        default="INFO",
-        description="Nivel de logging"
-    )
-    LOG_FORMAT: str = Field(
-        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        description="Formato de logging"
-    )
-    
-    # =============================================================================
-    # CONFIGURACIÓN DE MONITOREO
-    # =============================================================================
-    
-    # Configuración de monitoreo y alertas
-    ENABLE_MONITORING: bool = Field(
-        default=True,
-        description="Habilitar monitoreo"
-    )
-    MONITORING_INTERVAL: int = Field(
-        default=60,
-        description="Intervalo de monitoreo en segundos"
-    )
-    
-    # =============================================================================
-    # CONFIGURACIÓN DE DESARROLLO
-    # =============================================================================
-    
-    # Modo de desarrollo
-    DEBUG: bool = Field(
-        default=False,
-        description="Modo debug"
-    )
-    ENVIRONMENT: str = Field(
-        default="development",
-        description="Entorno de ejecución"
-    )
-    
+    max_file_size_mb: int = Field(default=50, env='MAX_FILE_SIZE_MB')
+    allowed_file_types: List[str] = ['pdf']
+
     class Config:
-        env_file = ".env"
-        case_sensitive = False
+        env_prefix = ''
+
+
+class ServerSettings(BaseSettings):
+    """Configuración del servidor."""
+    
+    host: str = Field(default='0.0.0.0', env='HOST')
+    port: int = Field(default=8080, env='PORT')
+
+    class Config:
+        env_prefix = ''
+
+
+class LoggingSettings(BaseSettings):
+    """Configuración de logging."""
+    
+    log_level: str = Field(default='INFO', env='LOG_LEVEL')
+    log_format: str = Field(
+        default='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        env='LOG_FORMAT'
+    )
+
+    class Config:
+        env_prefix = ''
+
+
+class MonitoringSettings(BaseSettings):
+    """Configuración de monitoreo."""
+    
+    enabled: bool = Field(default=True, env='ENABLE_MONITORING')
+    interval: int = Field(default=60, env='MONITORING_INTERVAL')  # segundos
+
+    class Config:
+        env_prefix = ''
+
+
+class AppSettings(BaseSettings):
+    """Configuración general de la aplicación."""
+    
+    debug: bool = Field(default=False, env='DEBUG')
+    environment: str = Field(default='development', env='ENVIRONMENT')
+
+    class Config:
+        env_prefix = ''
+
+
+
+
+class DrCecimConfig(BaseSettings):
+    """Configuración principal que agrupa todas las configuraciones."""
+    
+    # Subsecciones de configuración
+    google_cloud: GoogleCloudSettings = GoogleCloudSettings()
+    openai: OpenAISettings = OpenAISettings()
+    processing: ProcessingSettings = ProcessingSettings()
+    streamlit: StreamlitSettings = StreamlitSettings()
+    server: ServerSettings = ServerSettings()
+    logging: LoggingSettings = LoggingSettings()
+    monitoring: MonitoringSettings = MonitoringSettings()
+    app: AppSettings = AppSettings()
+
+    class Config:
+        env_prefix = ''
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._adjust_development_settings()
+        self._create_directories()
+
+    def _adjust_development_settings(self):
+        """Ajustar configuraciones específicas para desarrollo."""
+        if self.app.environment == 'development':
+            # Usar directorios locales para desarrollo
+            self.processing.temp_dir = './temp'
+            self.processing.processed_dir = './data/processed'
+            self.processing.embeddings_dir = './data/embeddings'
+
+    def _create_directories(self):
+        """Crear los directorios necesarios para el funcionamiento del sistema."""
+        # Solo crear directorios si no estamos en Cloud Functions
+        import os
+        if os.getenv("LOG_TO_DISK") == "false":
+            # En Cloud Functions, solo usar /tmp
+            return
+            
+        dirs_to_create = [
+            self.processing.temp_dir,
+            self.processing.processed_dir,
+            self.processing.embeddings_dir,
+        ]
+        
+        for dir_path in dirs_to_create:
+            try:
+                Path(dir_path).mkdir(parents=True, exist_ok=True)
+            except (OSError, PermissionError) as e:
+                # Log pero no fallar en Cloud Functions
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"No se pudo crear directorio {dir_path}: {e}")
+                pass
+
+    def validate_config(self):
+        """Valida que todas las variables de entorno críticas estén configuradas."""
+        missing_vars = []
+        
+        # Variables críticas
+        if not self.openai.openai_api_key:
+            missing_vars.append('OPENAI_API_KEY')
+        
+        if not self.google_cloud.gcs_bucket_name:
+            missing_vars.append('GCS_BUCKET_NAME')
+        
+        if not self.google_cloud.gcf_project_id:
+            missing_vars.append('GCF_PROJECT_ID')
+        
+        if missing_vars:
+            raise ValueError(f"Las siguientes variables de entorno son requeridas: {', '.join(missing_vars)}")
+        
+        return True
+
+    def to_dict(self):
+        """Convierte la configuración a un diccionario para compatibilidad."""
+        return {
+            'gcs': {
+                'bucket_name': self.google_cloud.gcs_bucket_name,
+                'credentials_path': self.google_cloud.gcs_credentials_path,
+                'project_id': self.google_cloud.gcf_project_id,
+                'region': self.google_cloud.gcf_region,
+                'uploads_prefix': self.google_cloud.gcs_uploads_prefix,
+                'temp_prefix': self.google_cloud.gcs_temp_prefix,
+            },
+                 'openai': {
+                 'api_key': self.openai.openai_api_key,
+                 'embedding_model': self.openai.embedding_model,
+                 'api_timeout': self.openai.api_timeout,
+                 'max_output_tokens': self.openai.max_output_tokens,
+                 'temperature': self.openai.temperature,
+                 'top_p': self.openai.top_p,
+             },
+            'rag': {
+                'chunk_size': self.processing.chunk_size,
+                'chunk_overlap': self.processing.chunk_overlap,
+            },
+            'processing': {
+                'temp_dir': self.processing.temp_dir,
+                'processed_dir': self.processing.processed_dir,
+                'embeddings_dir': self.processing.embeddings_dir,
+                'device': self.processing.device,
+            },
+            'streamlit': {
+                'title': self.streamlit.title,
+                'description': self.streamlit.description,
+                'max_file_size_mb': self.streamlit.max_file_size_mb,
+                'allowed_file_types': self.streamlit.allowed_file_types,
+            },
+            'monitoring': {
+                'enabled': self.monitoring.enabled,
+                'interval': self.monitoring.interval,
+            },
+            'app': {
+                'debug': self.app.debug,
+                'environment': self.app.environment,
+                'log_level': self.logging.log_level,
+                'log_format': self.logging.log_format,
+            }
+        }
 
 
 # Instancia global de configuración
-settings = StreamlitSettings()
+config = DrCecimConfig()
 
-# Variables de entorno para compatibilidad
-GCS_BUCKET_NAME = settings.GCS_BUCKET_NAME
-GCS_CREDENTIALS_PATH = settings.GCS_CREDENTIALS_PATH
-GCS_EMBEDDINGS_PREFIX = settings.GCS_EMBEDDINGS_PREFIX
-GCS_METADATA_PREFIX = settings.GCS_METADATA_PREFIX
-GCS_PROCESSED_PREFIX = settings.GCS_PROCESSED_PREFIX
-GCS_TEMP_PREFIX = settings.GCS_TEMP_PREFIX
+# Variables de compatibilidad para código existente
+GCS_BUCKET_NAME = config.google_cloud.gcs_bucket_name
+GCS_CREDENTIALS_PATH = config.google_cloud.gcs_credentials_path
+GCF_REGION = config.google_cloud.gcf_region
+GCF_PROJECT_ID = config.google_cloud.gcf_project_id
 
-GCS_METADATA_NAME = settings.GCS_METADATA_NAME
-GCS_METADATA_SUMMARY_NAME = settings.GCS_METADATA_SUMMARY_NAME
-GCS_CONFIG_NAME = settings.GCS_CONFIG_NAME
-GCF_REGION = settings.GCF_REGION
-GCF_PROJECT_ID = settings.GCF_PROJECT_ID
-OPENAI_API_KEY = settings.OPENAI_API_KEY
-PRIMARY_MODEL = settings.PRIMARY_MODEL
-FALLBACK_MODEL = settings.FALLBACK_MODEL
-EMBEDDING_MODEL = settings.EMBEDDING_MODEL
-TEMPERATURE = settings.TEMPERATURE
-TOP_P = settings.TOP_P
-TOP_K = settings.TOP_K
-MAX_OUTPUT_TOKENS = settings.MAX_OUTPUT_TOKENS
-API_TIMEOUT = settings.API_TIMEOUT
-RAG_NUM_CHUNKS = settings.RAG_NUM_CHUNKS
-SIMILARITY_THRESHOLD = settings.SIMILARITY_THRESHOLD
-CHUNK_SIZE = settings.CHUNK_SIZE
-CHUNK_OVERLAP = settings.CHUNK_OVERLAP
-TEMP_DIR = settings.TEMP_DIR
-PROCESSED_DIR = settings.PROCESSED_DIR
-EMBEDDINGS_DIR = settings.EMBEDDINGS_DIR
-DEVICE = settings.DEVICE
-LOG_LEVEL = settings.LOG_LEVEL
-LOG_FORMAT = settings.LOG_FORMAT
-ENABLE_MONITORING = settings.ENABLE_MONITORING
-MONITORING_INTERVAL = settings.MONITORING_INTERVAL
-DEBUG = settings.DEBUG
-ENVIRONMENT = settings.ENVIRONMENT
-STREAMLIT_TITLE = settings.STREAMLIT_TITLE
-STREAMLIT_DESCRIPTION = settings.STREAMLIT_DESCRIPTION
-MAX_FILE_SIZE_MB = settings.MAX_FILE_SIZE_MB
-PAGE_ICON = settings.PAGE_ICON
-LAYOUT = settings.LAYOUT
+OPENAI_API_KEY = config.openai.openai_api_key
+EMBEDDING_MODEL = config.openai.embedding_model
+API_TIMEOUT = config.openai.api_timeout
+MAX_OUTPUT_TOKENS = config.openai.max_output_tokens
+TEMPERATURE = config.openai.temperature
+TOP_P = config.openai.top_p
+
+CHUNK_SIZE = config.processing.chunk_size
+CHUNK_OVERLAP = config.processing.chunk_overlap
+TEMP_DIR = config.processing.temp_dir
+PROCESSED_DIR = config.processing.processed_dir
+EMBEDDINGS_DIR = config.processing.embeddings_dir
+DEVICE = config.processing.device
+
+HOST = config.server.host
+PORT = config.server.port
+
+STREAMLIT_TITLE = config.streamlit.title
+STREAMLIT_DESCRIPTION = config.streamlit.description
+MAX_FILE_SIZE_MB = config.streamlit.max_file_size_mb
+ALLOWED_FILE_TYPES = config.streamlit.allowed_file_types
+
+LOG_LEVEL = config.logging.log_level
+LOG_FORMAT = config.logging.log_format
+
+ENABLE_MONITORING = config.monitoring.enabled
+MONITORING_INTERVAL = config.monitoring.interval
+
+DEBUG = config.app.debug
+ENVIRONMENT = config.app.environment
+
+# GCS constants optimizados
+GCS_UPLOADS_PREFIX = config.google_cloud.gcs_uploads_prefix
+GCS_TEMP_PREFIX = config.google_cloud.gcs_temp_prefix
+
+# DEPRECATED: Migrando todo a PostgreSQL
+# GCS_EMBEDDINGS_PREFIX = 'embeddings/'  # NO USAR - Todo en PostgreSQL
+# GCS_METADATA_PREFIX = 'metadata/'      # NO USAR - Todo en PostgreSQL  
+# GCS_PROCESSED_PREFIX = 'processed/'    # NO USAR - Todo en PostgreSQL
+
+GCS_METADATA_NAME = config.google_cloud.gcs_metadata_name
+GCS_METADATA_SUMMARY_NAME = config.google_cloud.gcs_metadata_summary_name
+GCS_CONFIG_NAME = config.google_cloud.gcs_config_name
+
+# Diccionario de configuración para compatibilidad
+CONFIG = config.to_dict()
+
+# Funciones de compatibilidad
+def validate_config():
+    """Función de compatibilidad para validar configuración."""
+    return config.validate_config()
+
+def create_directories():
+    """Función de compatibilidad para crear directorios."""
+    return config._create_directories()
+
+# Ejecutar validación al importar
+if __name__ != '__main__':
+    validate_config() 

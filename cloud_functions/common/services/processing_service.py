@@ -139,7 +139,13 @@ class DocumentProcessor:
         else:
             output_dir = Path(output_dir)
             
-        output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except (OSError, PermissionError) as e:
+            logger.warning(f"No se pudo crear directorio {output_dir}: {e}")
+            # En Cloud Functions usar /tmp
+            import tempfile
+            output_dir = Path(tempfile.mkdtemp(prefix="marker_"))
         
         logger.info(f"Procesando documento con Marker: {pdf_path}")
         
@@ -492,7 +498,11 @@ class DocumentProcessor:
                 import shutil
                 if self.temp_dir.exists():
                     shutil.rmtree(self.temp_dir)
-                    self.temp_dir.mkdir(parents=True, exist_ok=True)
+                    try:
+                        self.temp_dir.mkdir(parents=True, exist_ok=True)
+                    except (OSError, PermissionError):
+                        # Usar /tmp en Cloud Functions
+                        self.temp_dir = Path("/tmp")
                     logger.info("Directorio temporal completamente limpiado")
         except Exception as e:
             logger.error(f"Error al limpiar archivos temporales: {str(e)}")
