@@ -33,8 +33,8 @@ from common.utils.resource_managers import (
 import openai
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
-# Configurar logging mejorado
-setup_logging(log_level="INFO", enable_file_logging=True, enable_console_logging=True)
+# Configurar logging mejorado (sin file logging en Cloud Functions)
+setup_logging(log_level="INFO", enable_file_logging=False, enable_console_logging=True)
 logger = get_logger(__name__)
 structured_logger = StructuredLogger("main")
 
@@ -108,6 +108,15 @@ log_system_info()
 def is_pdf_file(file_name: str) -> bool:
     """Verifica si el archivo es un PDF."""
     return file_name.lower().endswith('.pdf')
+
+
+# FUNCIÓN DE OPTIMIZACIÓN TEMPORAL - COMENTADA PARA DEPLOYMENT INICIAL
+# def _process_chunks_to_embeddings_direct(chunks_data: Dict, source_file: str) -> Dict:
+#     """
+#     OPTIMIZACIÓN FUTURA: Procesa chunks directamente a embeddings y PostgreSQL
+#     sin almacenamiento intermedio en GCS. Comentada temporalmente para deployment.
+#     """
+#     pass
 
 
 def process_pdf_document(pdf_path: str, filename: str) -> Dict:
@@ -271,7 +280,7 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
                         'source_file': file_name
                     }
                     
-                    # Subir chunks procesados
+                    # Subir chunks procesados (mantenemos el comportamiento original por ahora)
                     chunks_filename = f"{Path(file_name).stem}_chunks.json"
                     chunks_gcs_path = f"processed/{chunks_filename}"
                     

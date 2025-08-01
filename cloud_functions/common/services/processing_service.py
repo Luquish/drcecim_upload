@@ -20,12 +20,9 @@ Configuración:
 import os
 import logging
 import subprocess
-import tempfile
 from pathlib import Path
 import re
-from typing import List, Dict, Optional, Any, Tuple
-import pandas as pd
-from tqdm import tqdm
+from typing import List, Dict, Any
 
 from common.config.settings import CHUNK_SIZE, CHUNK_OVERLAP, TEMP_DIR
 

@@ -65,7 +65,7 @@ class VectorDBService:
                     'chunk_id': row.get('chunk_id', f'chunk_{i}'),
                     'text_content': row.get('text', ''),
                     'embedding_vector': embedding_list[i],
-                    'metadata': row.to_dict() if hasattr(row, 'to_dict') else {}
+                    'document_metadata': row.to_dict() if hasattr(row, 'to_dict') else {}
                 }
                 records.append(record)
             
@@ -110,7 +110,7 @@ class VectorDBService:
                         text_content,
                         document_id,
                         chunk_id,
-                        metadata,
+                        document_metadata,
                         embedding_vector <-> :query_embedding as distance
                     FROM embeddings
                     WHERE document_id = :document_id
@@ -128,7 +128,7 @@ class VectorDBService:
                         text_content,
                         document_id,
                         chunk_id,
-                        metadata,
+                        document_metadata,
                         embedding_vector <-> :query_embedding as distance
                     FROM embeddings
                     ORDER BY embedding_vector <-> :query_embedding
@@ -150,7 +150,7 @@ class VectorDBService:
                         'text_content': row.text_content,
                         'document_id': row.document_id,
                         'chunk_id': row.chunk_id,
-                        'metadata': row.metadata,
+                        'metadata': row.document_metadata,
                         'distance': float(row.distance)
                     }
                     results.append(result_dict)
@@ -185,7 +185,7 @@ class VectorDBService:
                         'document_id': embedding.document_id,
                         'chunk_id': embedding.chunk_id,
                         'text_content': embedding.text_content,
-                        'metadata': embedding.metadata,
+                        'metadata': embedding.document_metadata,
                         'created_at': embedding.created_at.isoformat() if embedding.created_at else None
                     }
                     results.append(result_dict)

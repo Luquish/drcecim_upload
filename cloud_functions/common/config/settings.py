@@ -24,11 +24,10 @@ class GoogleCloudSettings(BaseSettings):
     gcf_region: str = Field(default='us-central1', env='GCF_REGION')
     gcf_project_id: Optional[str] = Field(default=None, env='GCF_PROJECT_ID')
     
-    # Estructura de carpetas en GCS
-    gcs_embeddings_prefix: str = 'embeddings/'
-    gcs_metadata_prefix: str = 'metadata/'
-    gcs_processed_prefix: str = 'processed/'
+    # Estructura de carpetas en GCS optimizada
+    gcs_uploads_prefix: str = 'uploads/'
     gcs_temp_prefix: str = 'temp/'
+    # DEPRECATED: embeddings/, metadata/, processed/ - Todo migrado a PostgreSQL
     
     # Nombres de archivos en GCS
     gcs_metadata_name: str = 'metadata.csv'
@@ -207,9 +206,7 @@ class DrCecimConfig(BaseSettings):
                 'credentials_path': self.google_cloud.gcs_credentials_path,
                 'project_id': self.google_cloud.gcf_project_id,
                 'region': self.google_cloud.gcf_region,
-                'embeddings_prefix': self.google_cloud.gcs_embeddings_prefix,
-                'metadata_prefix': self.google_cloud.gcs_metadata_prefix,
-                'processed_prefix': self.google_cloud.gcs_processed_prefix,
+                'uploads_prefix': self.google_cloud.gcs_uploads_prefix,
                 'temp_prefix': self.google_cloud.gcs_temp_prefix,
             },
                  'openai': {
@@ -289,11 +286,14 @@ MONITORING_INTERVAL = config.monitoring.interval
 DEBUG = config.app.debug
 ENVIRONMENT = config.app.environment
 
-# GCS constants
-GCS_EMBEDDINGS_PREFIX = config.google_cloud.gcs_embeddings_prefix
-GCS_METADATA_PREFIX = config.google_cloud.gcs_metadata_prefix
-GCS_PROCESSED_PREFIX = config.google_cloud.gcs_processed_prefix
+# GCS constants optimizados
+GCS_UPLOADS_PREFIX = config.google_cloud.gcs_uploads_prefix
 GCS_TEMP_PREFIX = config.google_cloud.gcs_temp_prefix
+
+# DEPRECATED: Migrando todo a PostgreSQL
+# GCS_EMBEDDINGS_PREFIX = 'embeddings/'  # NO USAR - Todo en PostgreSQL
+# GCS_METADATA_PREFIX = 'metadata/'      # NO USAR - Todo en PostgreSQL  
+# GCS_PROCESSED_PREFIX = 'processed/'    # NO USAR - Todo en PostgreSQL
 
 GCS_METADATA_NAME = config.google_cloud.gcs_metadata_name
 GCS_METADATA_SUMMARY_NAME = config.google_cloud.gcs_metadata_summary_name

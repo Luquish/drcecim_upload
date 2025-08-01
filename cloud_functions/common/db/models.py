@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 Base = declarative_base()
 
 # Metadata para las tablas
-metadata = MetaData()
+db_metadata = MetaData()
 
 class EmbeddingModel(Base):
     """
@@ -27,7 +27,7 @@ class EmbeddingModel(Base):
     chunk_id = Column(Text, nullable=False, index=True)
     text_content = Column(Text, nullable=False)
     embedding_vector = Column(Vector(1536), nullable=False)  # OpenAI text-embedding-3-small
-    metadata = Column(JSONB, nullable=True)
+    document_metadata = Column(JSONB, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -47,7 +47,7 @@ class DocumentModel(Base):
     upload_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     processing_status = Column(Text, default='pending', nullable=False)
     num_chunks = Column(BigInteger, default=0, nullable=False)
-    metadata = Column(JSONB, nullable=True)
+    document_metadata = Column(JSONB, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -57,13 +57,13 @@ class DocumentModel(Base):
 # Tabla de embeddings usando Table (alternativa a declarative)
 embeddings_table = Table(
     "embeddings",
-    metadata,
+    db_metadata,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
     Column("document_id", Text, nullable=False, index=True),
     Column("chunk_id", Text, nullable=False, index=True),
     Column("text_content", Text, nullable=False),
     Column("embedding_vector", Vector(1536), nullable=False),
-    Column("metadata", JSONB, nullable=True),
+    Column("document_metadata", JSONB, nullable=True),
     Column("created_at", DateTime, default=datetime.utcnow, nullable=False),
     Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 )
@@ -71,7 +71,7 @@ embeddings_table = Table(
 # Tabla de documentos usando Table (alternativa a declarative)
 documents_table = Table(
     "documents",
-    metadata,
+    db_metadata,
     Column("id", BigInteger, primary_key=True, autoincrement=True),
     Column("document_id", Text, unique=True, nullable=False, index=True),
     Column("filename", Text, nullable=False),
@@ -79,7 +79,7 @@ documents_table = Table(
     Column("upload_date", DateTime, default=datetime.utcnow, nullable=False),
     Column("processing_status", Text, default='pending', nullable=False),
     Column("num_chunks", BigInteger, default=0, nullable=False),
-    Column("metadata", JSONB, nullable=True),
+    Column("document_metadata", JSONB, nullable=True),
     Column("created_at", DateTime, default=datetime.utcnow, nullable=False),
     Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 )

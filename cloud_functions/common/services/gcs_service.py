@@ -15,16 +15,13 @@ import json
 from common.config.settings import (
     GCS_BUCKET_NAME,
     GCS_CREDENTIALS_PATH,
-    GCS_EMBEDDINGS_PREFIX,
-    GCS_METADATA_PREFIX,
-    GCS_PROCESSED_PREFIX,
-    GCS_TEMP_PREFIX,
-
-    GCS_METADATA_NAME,
-    GCS_METADATA_SUMMARY_NAME,
-    GCS_CONFIG_NAME,
     TEMP_DIR
 )
+
+# Constantes deprecated - mantenidas para compatibilidad temporal
+GCS_EMBEDDINGS_PREFIX = 'embeddings/'  # DEPRECATED - Todo migrado a PostgreSQL
+GCS_METADATA_PREFIX = 'metadata/'      # DEPRECATED - Todo migrado a PostgreSQL  
+GCS_PROCESSED_PREFIX = 'processed/'    # DEPRECATED - Todo migrado a PostgreSQL
 
 # Configurar logger
 logger = logging.getLogger(__name__)
