@@ -117,6 +117,22 @@ class LoggingSettings(BaseSettings):
         env_prefix = ''
 
 
+class DatabaseSettings(BaseSettings):
+    """Configuración de Cloud SQL Database."""
+    
+    db_user: str = Field(default='raguser', env='DB_USER')
+    db_pass: str = Field(default='DrCecim2024@', env='DB_PASS')
+    db_name: str = Field(default='ragdb', env='DB_NAME')
+    cloud_sql_connection_name: str = Field(
+        default='drcecim-465823:southamerica-east1:drcecim-cloud-sql', 
+        env='CLOUD_SQL_CONNECTION_NAME'
+    )
+    db_private_ip: bool = Field(default=False, env='DB_PRIVATE_IP')
+
+    class Config:
+        env_prefix = ''
+
+
 class MonitoringSettings(BaseSettings):
     """Configuración de monitoreo."""
     
@@ -150,6 +166,7 @@ class DrCecimConfig(BaseSettings):
     server: ServerSettings = ServerSettings()
     logging: LoggingSettings = LoggingSettings()
     monitoring: MonitoringSettings = MonitoringSettings()
+    database: DatabaseSettings = DatabaseSettings()
     app: AppSettings = AppSettings()
 
     class Config:
@@ -196,15 +213,16 @@ class DrCecimConfig(BaseSettings):
         """Valida que todas las variables de entorno críticas estén configuradas."""
         missing_vars = []
         
-        # Variables críticas
-        if not self.openai.openai_api_key:
-            missing_vars.append('OPENAI_API_KEY')
-        
+        # Variables críticas para el frontend
         if not self.google_cloud.gcs_bucket_name:
             missing_vars.append('GCS_BUCKET_NAME')
         
         if not self.google_cloud.gcf_project_id:
             missing_vars.append('GCF_PROJECT_ID')
+        
+        # OpenAI API es opcional para el frontend (solo se usa en Cloud Functions)
+        # if not self.openai.openai_api_key:
+        #     missing_vars.append('OPENAI_API_KEY')
         
         if missing_vars:
             raise ValueError(f"Las siguientes variables de entorno son requeridas: {', '.join(missing_vars)}")
@@ -250,6 +268,13 @@ class DrCecimConfig(BaseSettings):
                 'enabled': self.monitoring.enabled,
                 'interval': self.monitoring.interval,
             },
+            'database': {
+                'db_user': self.database.db_user,
+                'db_pass': self.database.db_pass,
+                'db_name': self.database.db_name,
+                'cloud_sql_connection_name': self.database.cloud_sql_connection_name,
+                'db_private_ip': self.database.db_private_ip,
+            },
             'app': {
                 'debug': self.app.debug,
                 'environment': self.app.environment,
@@ -267,6 +292,13 @@ GCS_BUCKET_NAME = config.google_cloud.gcs_bucket_name
 GCS_CREDENTIALS_PATH = config.google_cloud.gcs_credentials_path
 GCF_REGION = config.google_cloud.gcf_region
 GCF_PROJECT_ID = config.google_cloud.gcf_project_id
+
+# Variables de base de datos
+DB_USER = config.database.db_user
+DB_PASS = config.database.db_pass
+DB_NAME = config.database.db_name
+CLOUD_SQL_CONNECTION_NAME = config.database.cloud_sql_connection_name
+DB_PRIVATE_IP = config.database.db_private_ip
 
 OPENAI_API_KEY = config.openai.openai_api_key
 EMBEDDING_MODEL = config.openai.embedding_model

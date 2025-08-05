@@ -52,7 +52,7 @@ class StatusService:
         Returns:
             str: ID único del documento
         """
-        document_id = f"{user_id}_{int(datetime.now().timestamp())}_{filename}"
+        document_id = f"{filename}_{int(datetime.now().timestamp())}"
         
         status_data = {
             "document_id": document_id,

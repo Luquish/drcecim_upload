@@ -8,6 +8,9 @@ import os
 import json
 import logging
 import tempfile
+import psutil
+import threading
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -41,6 +44,76 @@ structured_logger = StructuredLogger("main")
 _embedding_service = None
 _document_processor = None
 _gcs_service = None
+
+class MemoryMonitor:
+    """Monitor de memoria en tiempo real para Cloud Functions."""
+    
+    def __init__(self):
+        self.process = psutil.Process()
+        self.start_memory = 0
+        self.max_memory = 0
+        self.current_memory = 0
+        self.monitoring = False
+        self.monitor_thread = None
+        self.memory_samples = []
+    
+    def start_monitoring(self):
+        """Inicia el monitoreo de memoria."""
+        self.start_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+        self.max_memory = self.start_memory
+        self.current_memory = self.start_memory
+        self.monitoring = True
+        self.memory_samples = []
+        
+        logger.info(f"🔍 Monitoreo de memoria iniciado - Memoria inicial: {self.start_memory:.1f} MB")
+        
+        def monitor():
+            while self.monitoring:
+                try:
+                    current = self.process.memory_info().rss / 1024 / 1024  # MB
+                    self.current_memory = current
+                    self.max_memory = max(self.max_memory, current)
+                    self.memory_samples.append(current)
+                    time.sleep(1)  # Muestrear cada segundo
+                except:
+                    break
+        
+        self.monitor_thread = threading.Thread(target=monitor, daemon=True)
+        self.monitor_thread.start()
+    
+    def stop_monitoring(self):
+        """Detiene el monitoreo y reporta estadísticas."""
+        self.monitoring = False
+        if self.monitor_thread:
+            self.monitor_thread.join(timeout=1)
+        
+        final_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+        memory_increase = self.max_memory - self.start_memory
+        
+        logger.info(f"📊 ESTADÍSTICAS DE MEMORIA:")
+        logger.info(f"   - Memoria inicial: {self.start_memory:.1f} MB")
+        logger.info(f"   - Memoria máxima: {self.max_memory:.1f} MB")
+        logger.info(f"   - Memoria final: {final_memory:.1f} MB")
+        logger.info(f"   - Incremento máximo: +{memory_increase:.1f} MB")
+        logger.info(f"   - Muestras tomadas: {len(self.memory_samples)}")
+        
+        # Log estructurado para métricas
+        structured_logger.info(
+            "Estadísticas de memoria completadas",
+            memoria_inicial_mb=round(self.start_memory, 1),
+            memoria_maxima_mb=round(self.max_memory, 1),
+            memoria_final_mb=round(final_memory, 1),
+            incremento_mb=round(memory_increase, 1),
+            muestras_totales=len(self.memory_samples)
+        )
+        
+        return {
+            'start_mb': self.start_memory,
+            'max_mb': self.max_memory,
+            'final_mb': final_memory,
+            'increase_mb': memory_increase,
+            'samples': len(self.memory_samples)
+        }
 
 def get_embedding_service() -> EmbeddingService:
     """Obtiene una instancia global del servicio de embeddings."""
@@ -213,6 +286,10 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
         bucket = storage_client.bucket(bucket_name)
         blob = bucket.blob(file_name)
         
+        # Inicializar monitor de memoria
+        memory_monitor = MemoryMonitor()
+        memory_monitor.start_monitoring()
+        
         # Procesar con context managers para robustez
         with document_processing_context() as doc_context:
             with error_handling_context() as error_context:
@@ -250,7 +327,8 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
                         'num_chunks': result['num_chunks'],
                         'total_words': result['total_words'],
                         'processing_timestamp': result['processing_timestamp'],
-                        'source_file': file_name
+                        'source_file': file_name,
+                        'processed_successfully': True
                     }
                     
                     # Subir chunks procesados (mantenemos el comportamiento original por ahora)
@@ -275,12 +353,32 @@ def process_pdf_to_chunks(cloud_event: Any) -> None:
                         num_chunks=result['num_chunks'],
                         processing_time='completed'
                     )
+        
+        # Detener monitoreo de memoria y reportar estadísticas
+        if 'memory_monitor' in locals():
+            memory_stats = memory_monitor.stop_monitoring()
+            structured_logger.info("PDF procesado con éxito - Estadísticas finales",
+                memoria_maxima_usada_mb=memory_stats['max_mb'],
+                memoria_disponible_mb=32768,  # 32GB asignados
+                porcentaje_usado=round((memory_stats['max_mb'] / 32768) * 100, 1),
+                archivo_procesado=file_name
+            )
     
     except Exception as e:
-        structured_logger.error("Error crítico en process_pdf_to_chunks", 
-            error=str(e),
-            file_name=file_name if 'file_name' in locals() else 'unknown'
-        )
+        # Detener monitoreo de memoria en caso de error
+        if 'memory_monitor' in locals():
+            memory_stats = memory_monitor.stop_monitoring()
+            structured_logger.error("Error en procesamiento - Estadísticas de memoria",
+                error=str(e),
+                memoria_maxima_usada_mb=memory_stats['max_mb'],
+                memoria_disponible_mb=32768,
+                file_name=file_name if 'file_name' in locals() else 'unknown'
+            )
+        else:
+            structured_logger.error("Error crítico en process_pdf_to_chunks", 
+                error=str(e),
+                file_name=file_name if 'file_name' in locals() else 'unknown'
+            )
         raise
 
 
@@ -478,6 +576,9 @@ def _download_and_load_chunks(gcs_service: GCSService, file_name: str, session_i
     app_logger.info("Descargando archivo de chunks", {'session_id': session_id})
     chunks_content = gcs_service.read_file_as_string(file_name)
     chunks_data = json.loads(chunks_content)
+    
+    # Agregar la ruta del archivo de chunks para limpieza posterior
+    chunks_data['chunks_file_path'] = f"gs://{gcs_service.bucket_name}/{file_name}"
     
     processing_monitor.log_step(session_id, "chunks_downloaded", {
         'num_chunks': chunks_data.get('num_chunks', 0)

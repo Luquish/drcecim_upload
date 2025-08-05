@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from sqlalchemy import text, func
+from datetime import datetime
 
 from common.db.connection import get_engine, get_session
 from common.db.models import EmbeddingModel, create_tables, get_table_info
@@ -72,6 +73,77 @@ class VectorDBService:
             # Insertar en lotes para mejor rendimiento
             batch_size = 100
             with get_session() as session:
+                # Primero, guardar información del documento en la tabla documents
+                if records:
+                    first_record = records[0]
+                    filename = metadata_df.iloc[0].get('filename', 'unknown')
+                    
+                    # Obtener información del archivo original desde uploads/
+                    file_size = 0
+                    upload_date = datetime.now()
+                    
+                    try:
+                        from common.services.gcs_service import GCSService
+                        gcs_service = GCSService()
+                        
+                        # Construir ruta del archivo original
+                        original_file_path = f"uploads/{filename}"
+                        
+                        if gcs_service.file_exists(original_file_path):
+                            # Obtener metadatos del archivo original
+                            file_metadata = gcs_service.get_file_metadata(original_file_path)
+                            file_size = file_metadata.get('size', 0)
+                            
+                            # Obtener fecha de creación del archivo
+                            created_str = file_metadata.get('created')
+                            if created_str:
+                                upload_date = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
+                            
+                            logger.info(f"Metadatos del archivo original obtenidos: {filename}, size: {file_size}, created: {upload_date}")
+                        else:
+                            logger.warning(f"Archivo original no encontrado: {original_file_path}")
+                            
+                    except Exception as e:
+                        logger.warning(f"No se pudieron obtener metadatos del archivo original: {str(e)}")
+                    
+                    document_info = {
+                        'document_id': first_record['document_id'],
+                        'filename': filename,
+                        'file_size': file_size,
+                        'upload_date': upload_date,
+                        'processing_status': 'completed',
+                        'num_chunks': len(records),
+                        'document_metadata': {
+                            'total_words': sum(metadata_df.get('word_count', [0])),
+                            'total_chars': sum(metadata_df.get('text_length', [0])),
+                            'chunk_count': len(records),
+                            'processed_at': datetime.now().isoformat(),
+                            'original_filename': filename,
+                            'embedding_model': 'OpenAI text-embedding-3-small',
+                            'vector_dimension': 1536
+                        }
+                    }
+                    
+                    # Usar upsert para evitar duplicados
+                    from sqlalchemy.dialects.postgresql import insert
+                    from common.db.models import DocumentModel
+                    
+                    stmt = insert(DocumentModel).values(**document_info)
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=['document_id'],
+                        set_={
+                            'filename': document_info['filename'],
+                            'file_size': document_info['file_size'],
+                            'upload_date': document_info['upload_date'],
+                            'processing_status': document_info['processing_status'],
+                            'num_chunks': document_info['num_chunks'],
+                            'document_metadata': document_info['document_metadata'],
+                            'updated_at': datetime.now()
+                        }
+                    )
+                    session.execute(stmt)
+                
+                # Luego, insertar embeddings
                 for i in range(0, len(records), batch_size):
                     batch = records[i:i + batch_size]
                     embedding_models = [EmbeddingModel(**record) for record in batch]
@@ -79,7 +151,7 @@ class VectorDBService:
                 
                 session.commit()
             
-            logger.info(f"Almacenados {len(records)} embeddings en la base de datos")
+            logger.info(f"Almacenados {len(records)} embeddings y información del documento en la base de datos")
             return True
             
         except Exception as e:

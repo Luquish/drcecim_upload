@@ -74,10 +74,27 @@ def render_sidebar() -> None:
         
         st.markdown("---")
         
-        # Mostrar información de la sesión
-        if hasattr(st.session_state, 'processing_history'):
-            history_count = len(st.session_state.processing_history)
-            st.metric("📊 Archivos procesados", history_count)
+        # Mostrar información desde la base de datos
+        try:
+            from services.database_service import get_database_service
+            
+            db_service = get_database_service()
+            
+            # Probar conexión primero
+            if db_service.test_connection():
+                summary = db_service.get_documents_summary()
+                
+                st.metric("📄 Documentos", summary['total_documents'])
+                st.metric("✅ Procesados", summary['completed_documents'])
+                
+                # Mostrar estado de conexión
+                st.success("🟢 Base de datos conectada")
+            else:
+                st.error("🔴 Error de conexión a BD")
+                st.metric("📄 Documentos", "N/A")
+        except Exception as e:
+            st.error(f"🔴 Error: {str(e)}")
+            st.metric("📄 Documentos", "N/A")
         
         st.markdown("---")
         
@@ -230,28 +247,65 @@ def render_processing_result(result: Dict[str, Any]) -> None:
 
 def render_processing_history() -> None:
     """
-    Renderiza el historial de procesamiento de la sesión.
+    Renderiza el historial de documentos desde la base de datos.
     """
-    if not hasattr(st.session_state, 'processing_history') or not st.session_state.processing_history:
-        return
-    
-    st.markdown("---")
-    st.markdown("### 📊 **Historial de la Sesión**")
-    
-    # Crear DataFrame para mostrar el historial
-    history_data = []
-    for entry in reversed(st.session_state.processing_history[-10:]):  # Últimos 10
-        history_data.append({
-            'Archivo': entry['filename'],
-            'Hora': datetime.fromisoformat(entry['timestamp']).strftime('%H:%M:%S'),
-            'Estado': '✅ Éxito' if entry['success'] else '❌ Error',
-            'Detalles': entry['result'].get('error', 'Procesado correctamente') if not entry['success'] 
-                       else f"ID: {entry['result'].get('document_id', 'N/A')}"
-        })
-    
-    if history_data:
-        df = pd.DataFrame(history_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    try:
+        from services.database_service import get_database_service
+        
+        st.markdown("---")
+        st.markdown("### 📊 **Historial de Documentos**")
+        
+        # Obtener servicio de base de datos
+        db_service = get_database_service()
+        
+        # Probar conexión
+        if not db_service.test_connection():
+            st.error("🔴 No se pudo conectar a la base de datos")
+            st.info("📝 Verifica la configuración de conexión en .streamlit/secrets.toml")
+            return
+        
+        # Obtener documentos desde la base de datos
+        documents = db_service.get_documents_history()
+        
+        if not documents:
+            st.info("📝 No hay documentos procesados aún.")
+            return
+        
+        # Crear DataFrame para mostrar el historial
+        history_data = []
+        for doc in documents:
+            # Formatear fecha
+            created_date = doc['created_at'].strftime('%d/%m/%Y %H:%M') if doc['created_at'] else 'N/A'
+            
+            # Formatear tamaño del archivo
+            file_size_mb = f"{doc['file_size'] / (1024*1024):.2f} MB" if doc['file_size'] else "N/A"
+            
+            # Determinar estado
+            status_icon = "✅" if doc['processing_status'] == 'completed' else "⏳" if doc['processing_status'] == 'processing' else "❌"
+            status_text = "Completado" if doc['processing_status'] == 'completed' else "Procesando" if doc['processing_status'] == 'processing' else "Error"
+            
+            history_data.append({
+                '📄 Documento': doc['filename'].replace('uploads/', ''),
+                '📅 Fecha de Subida': created_date,
+                '📊 Tamaño': file_size_mb,
+                '✅ Estado': f"{status_icon} {status_text}"
+            })
+        
+        if history_data:
+            df = pd.DataFrame(history_data)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            
+            # Mostrar estadísticas relevantes para empleadores
+            summary = db_service.get_documents_summary()
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("📄 Total Documentos", summary['total_documents'])
+            with col2:
+                st.metric("✅ Procesados", summary['completed_documents'])
+                
+    except Exception as e:
+        st.error(f"Error cargando historial: {str(e)}")
+        st.info("📝 No se pudo cargar el historial desde la base de datos.")
 
 
 def render_main_interface() -> None:

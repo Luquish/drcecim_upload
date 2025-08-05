@@ -70,6 +70,8 @@ services:
       - drcecim_temp:/app/temp
       # Montar credenciales de Google Cloud si están disponibles localmente
       - ./cloud_functions/common/credentials/service-account.json:/app/cloud_functions/credentials/service-account.json:ro
+      # Montar archivo de secrets de Streamlit
+      - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
     
     env_file:
       - .env

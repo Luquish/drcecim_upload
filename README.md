@@ -102,7 +102,7 @@ source test_env/bin/activate
 pip install -r requirements.txt
 
 # 2. PostgreSQL local + pgvector
-brew services start postgresql@14
+brew services start postgresql@15
 createdb ragdb
 psql ragdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
 psql ragdb -c "CREATE USER raguser WITH PASSWORD 'DrCecim2024@';"

@@ -1,11 +1,7 @@
-[global]
-# Configuración global
-dataFrameSerialization = "legacy"
-
 [server]
 # Configuración del servidor
 port = 8501
-enableCORS = false
+enableCORS = true
 enableXsrfProtection = true
 maxUploadSize = 200
 maxMessageSize = 200
@@ -20,8 +16,6 @@ gatherUsageStats = true
 [runner]
 # Configuración del runner
 magicEnabled = true
-installTracer = false
-fixMatplotlib = true
 postScriptGC = true
 fastReruns = true
 enforceSerializableSessionState = false
@@ -33,8 +27,6 @@ messageFormat = "%(asctime)s %(message)s"
 
 [client]
 # Configuración del cliente
-caching = true
-displayEnabled = true
 showErrorDetails = true
 
 [theme]

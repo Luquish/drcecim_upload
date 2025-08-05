@@ -4,7 +4,7 @@ Contiene las funciones de procesamiento, upload y manejo de estado.
 """
 import requests
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 # Imports con manejo de errores
@@ -81,7 +81,7 @@ def upload_file_to_bucket(file_data: bytes, filename: str) -> Dict[str, Any]:
         # Generar timestamp único para evitar colisiones de nombres
         # Formato: YYYYMMDD_HHMMSS para ordenamiento cronológico
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_filename = f"uploads/{timestamp}_{filename}"
+        unique_filename = f"uploads/{filename}_{timestamp}"
         
         # Subir archivo al bucket usando el servicio GCS
         # upload_bytes es un método que maneja la subida de datos binarios
@@ -312,3 +312,20 @@ def validate_cloud_function_url() -> bool:
         return url is not None and url.strip() != ""
     except Exception:
         return False 
+
+def get_documents_history_from_db() -> List[Dict[str, Any]]:
+    """
+    Obtiene el historial de documentos desde la base de datos PostgreSQL.
+    
+    Returns:
+        List[Dict]: Lista de documentos con su información completa
+    """
+    try:
+        from services.database_service import get_database_service
+        db_service = get_database_service()
+        return db_service.get_documents_history()
+    except Exception as e:
+        logger.error(f"Error obteniendo historial desde DB: {str(e)}")
+        return []
+
+ 

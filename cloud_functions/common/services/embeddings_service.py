@@ -374,7 +374,7 @@ class EmbeddingService:
             filename = processed_doc.get('filename', 'unknown')
             
             # Preparar datos para embeddings
-            texts = chunks
+            texts = [chunk.get('text', '') for chunk in chunks]
             filenames = [filename] * len(chunks)
             chunk_indices = list(range(len(chunks)))
             
@@ -395,6 +395,15 @@ class EmbeddingService:
             
             if not storage_success:
                 raise Exception("Error al almacenar embeddings en PostgreSQL")
+            
+            # Limpiar archivos procesados redundantes después de almacenar exitosamente
+            chunks_file_path = processed_doc.get('chunks_file_path', '')
+            if chunks_file_path:
+                cleanup_success = self.cleanup_processed_files(chunks_file_path)
+                if cleanup_success:
+                    logger.info("Archivos procesados limpiados exitosamente")
+                else:
+                    logger.warning("No se pudieron limpiar algunos archivos procesados")
             
             # Crear configuración
             config = {
@@ -465,6 +474,50 @@ class EmbeddingService:
                     logger.info("Directorio temporal de embeddings limpiado")
         except Exception as e:
             logger.error(f"Error al limpiar archivos temporales: {str(e)}")
+
+    def cleanup_processed_files(self, chunks_file_path: str) -> bool:
+        """
+        Limpia archivos procesados redundantes después de almacenar embeddings.
+        
+        Args:
+            chunks_file_path (str): Ruta del archivo de chunks procesados
+            
+        Returns:
+            bool: True si se limpiaron exitosamente
+        """
+        try:
+            from common.services.gcs_service import GCSService
+            gcs_service = GCSService()
+            
+            # Extraer la ruta del archivo de chunks
+            if chunks_file_path.startswith('gs://'):
+                # Es una ruta de GCS completa
+                bucket_name = chunks_file_path.split('/')[2]
+                file_path = '/'.join(chunks_file_path.split('/')[3:])
+                
+                # Eliminar el archivo de chunks procesados
+                success = gcs_service.delete_file(file_path)
+                if success:
+                    logger.info(f"Archivo de chunks eliminado: {chunks_file_path}")
+                else:
+                    logger.warning(f"No se pudo eliminar archivo: {chunks_file_path}")
+                
+                # También eliminar archivos temporales locales si existen
+                self.cleanup_temp_files()
+                
+                return success
+            else:
+                # Es una ruta local
+                import os
+                if os.path.exists(chunks_file_path):
+                    os.remove(chunks_file_path)
+                    logger.info(f"Archivo local eliminado: {chunks_file_path}")
+                
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error al limpiar archivos procesados: {str(e)}")
+            return False
 
     def _generate_embeddings_with_batch_api(self, texts: List[str]) -> np.ndarray:
         """
