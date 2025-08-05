@@ -112,7 +112,7 @@ class VectorDBService:
                         'upload_date': upload_date,
                         'processing_status': 'completed',
                         'num_chunks': len(records),
-                        # Nuevas columnas individuales en lugar de document_metadata JSON
+                        # Columnas individuales para metadatos del documento
                         'chunk_count': len(records),
                         'total_chars': sum(metadata_df.get('text_length', [0])),
                         'total_words': sum(metadata_df.get('word_count', [0])),

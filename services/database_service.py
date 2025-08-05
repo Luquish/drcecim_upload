@@ -34,18 +34,22 @@ class StreamlitDatabaseService:
         try:
             logger.info("🔄 Iniciando conexión a Cloud SQL...")
             
-            # Obtener configuración desde Streamlit secrets
-            db_config = st.secrets["connections"]["postgresql"]
+            # Obtener configuración desde Streamlit secrets (variables de entorno)
+            db_host = st.secrets.get('DB_HOST', '34.95.166.187')
+            db_port = st.secrets.get('DB_PORT', 5432)
+            db_name = st.secrets.get('DB_NAME', 'ragdb')
+            db_user = st.secrets.get('DB_USER', 'raguser')
+            db_pass = st.secrets.get('DB_PASS', 'DrCecim2024@')
             
-            logger.info(f"Configuración: {db_config['username']}@{db_config['host']}:{db_config['port']}")
+            logger.info(f"Configuración: {db_user}@{db_host}:{db_port}")
             
             # Crear conexión usando la configuración de Streamlit secrets
             self.conn = psycopg2.connect(
-                host=db_config['host'],
-                port=db_config['port'],
-                database=db_config['database'],
-                user=db_config['username'],
-                password=db_config['password'],
+                host=db_host,
+                port=db_port,
+                database=db_name,
+                user=db_user,
+                password=db_pass,
                 cursor_factory=RealDictCursor
             )
             logger.info("✅ Conexión a Cloud SQL inicializada exitosamente")

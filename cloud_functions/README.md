@@ -80,7 +80,14 @@ CREATE TABLE documents (
     filename VARCHAR(255) NOT NULL,
     upload_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     processing_status VARCHAR(50) DEFAULT 'uploaded',
-    document_metadata JSONB,
+    -- Columnas individuales para metadatos:
+    chunk_count INTEGER,
+    total_chars INTEGER,
+    total_words INTEGER,
+    processed_at TIMESTAMP,
+    embedding_model VARCHAR(100),
+    vector_dimension INTEGER,
+    original_filename TEXT,
     total_chunks INTEGER,
     total_words INTEGER
 );
@@ -92,7 +99,14 @@ CREATE TABLE embeddings (
     chunk_index INTEGER NOT NULL,
     content TEXT NOT NULL,
     embedding vector(1536),  -- OpenAI embeddings dimension
-    document_metadata JSONB,
+    -- Columnas individuales para metadatos:
+    chunk_count INTEGER,
+    total_chars INTEGER,
+    total_words INTEGER,
+    processed_at TIMESTAMP,
+    embedding_model VARCHAR(100),
+    vector_dimension INTEGER,
+    original_filename TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

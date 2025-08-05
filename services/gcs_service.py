@@ -67,7 +67,6 @@ class GCSService:
             raise
         
         # Directorio temporal para archivos descargados
-        import os
         if os.getenv("LOG_TO_DISK") == "false":
             # En Cloud Functions usar /tmp
             self.temp_dir = Path("/tmp")

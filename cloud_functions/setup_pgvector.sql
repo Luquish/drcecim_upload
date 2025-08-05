@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS documents (
     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     processing_status TEXT DEFAULT 'pending',
     num_chunks BIGINT DEFAULT 0,
-    -- Nuevas columnas extraídas del JSON document_metadata
+    -- Columnas individuales para metadatos del documento
     chunk_count INTEGER,
     total_chars INTEGER,
     total_words INTEGER,

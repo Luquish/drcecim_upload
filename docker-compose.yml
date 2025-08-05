@@ -6,68 +6,12 @@ services:
     ports:
       - "8501:8501"
     environment:
-      # Variables de entorno básicas
-      - ENVIRONMENT=development
-      - DEBUG=false
-      - LOG_LEVEL=INFO
-      
-      # Configuración de Streamlit
-      - STREAMLIT_TITLE=DrCecim - Carga de Documentos
-      - STREAMLIT_DESCRIPTION=Sistema de carga y procesamiento de documentos PDF
-      - MAX_FILE_SIZE_MB=50
+      # Variables básicas del contenedor
       - HOST=0.0.0.0
       - PORT=8501
       
-      # Configuración de procesamiento
-      - CHUNK_SIZE=250
-      - CHUNK_OVERLAP=50
-      - DEVICE=cpu
-      
-      # Configuración de OpenAI (especificar en archivo .env)
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
-      - API_TIMEOUT=60
-      - MAX_OUTPUT_TOKENS=2048
-      - TEMPERATURE=0.7
-      - TOP_P=1.0
-      
-      # Configuración de Google Cloud (especificar en archivo .env)
-      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
-      - GCF_PROJECT_ID=${GCF_PROJECT_ID}
-      - GCF_REGION=${GCF_REGION:-southamerica-east1}
-      - GCS_CREDENTIALS_PATH=${GCS_CREDENTIALS_PATH}
+      # Configuración de credenciales de Google Cloud
       - GOOGLE_APPLICATION_CREDENTIALS=/app/cloud_functions/credentials/service-account.json
-      
-      # Configuración de Cloud SQL Database
-      - DB_USER=raguser
-      - DB_PASS=DrCecim2024@
-      - DB_NAME=ragdb
-      - DB_HOST=34.95.166.187
-      - DB_PORT=5432
-      - CLOUD_SQL_CONNECTION_NAME=drcecim-465823:southamerica-east1:drcecim-cloud-sql
-      - DB_PRIVATE_IP=false
-      
-      # URLs de Cloud Functions (actualizar después del deployment)
-      # Nota: Estas variables no se utilizan en la aplicación Streamlit
-      
-      # Configuración de límites
-      - OPENAI_RATE_LIMIT=50
-      - EMBEDDING_BATCH_SIZE=16
-      - PROCESSING_TIMEOUT=900
-      
-      # Configuración de monitoreo
-      - ENABLE_MONITORING=true
-      - MONITORING_INTERVAL=60
-      
-      # Prefijos de GCS
-      - GCS_EMBEDDINGS_PREFIX=embeddings/
-      - GCS_METADATA_PREFIX=metadata/
-      - GCS_PROCESSED_PREFIX=processed/
-      - GCS_TEMP_PREFIX=temp/
-      
-      # Nombres de archivos en GCS
-
-      - GCS_METADATA_NAME=metadata.csv
-      - GCS_CONFIG_NAME=config.json
     
     volumes:
       # Volumen para datos persistentes

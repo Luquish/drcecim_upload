@@ -207,7 +207,6 @@ class DrCecimConfig(BaseSettings):
     def _create_directories(self):
         """Crear los directorios necesarios para el funcionamiento del sistema."""
         # Solo crear directorios si no estamos en Cloud Functions
-        import os
         if os.getenv("LOG_TO_DISK") == "false":
             # En Cloud Functions, solo usar /tmp
             return
