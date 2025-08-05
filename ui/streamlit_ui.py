@@ -83,10 +83,6 @@ def render_sidebar() -> None:
             # Probar conexión primero
             if db_service.test_connection():
                 summary = db_service.get_documents_summary()
-                
-                st.metric("📄 Documentos", summary['total_documents'])
-                st.metric("✅ Procesados", summary['completed_documents'])
-                
                 # Mostrar estado de conexión
                 st.success("🟢 Base de datos conectada")
             else:
@@ -277,9 +273,6 @@ def render_processing_history() -> None:
             # Formatear fecha
             created_date = doc['created_at'].strftime('%d/%m/%Y %H:%M') if doc['created_at'] else 'N/A'
             
-            # Formatear tamaño del archivo
-            file_size_mb = f"{doc['file_size'] / (1024*1024):.2f} MB" if doc['file_size'] else "N/A"
-            
             # Determinar estado
             status_icon = "✅" if doc['processing_status'] == 'completed' else "⏳" if doc['processing_status'] == 'processing' else "❌"
             status_text = "Completado" if doc['processing_status'] == 'completed' else "Procesando" if doc['processing_status'] == 'processing' else "Error"
@@ -287,21 +280,12 @@ def render_processing_history() -> None:
             history_data.append({
                 '📄 Documento': doc['filename'].replace('uploads/', ''),
                 '📅 Fecha de Subida': created_date,
-                '📊 Tamaño': file_size_mb,
                 '✅ Estado': f"{status_icon} {status_text}"
             })
         
         if history_data:
             df = pd.DataFrame(history_data)
             st.dataframe(df, use_container_width=True, hide_index=True)
-            
-            # Mostrar estadísticas relevantes para empleadores
-            summary = db_service.get_documents_summary()
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("📄 Total Documentos", summary['total_documents'])
-            with col2:
-                st.metric("✅ Procesados", summary['completed_documents'])
                 
     except Exception as e:
         st.error(f"Error cargando historial: {str(e)}")
