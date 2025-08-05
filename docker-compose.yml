@@ -21,9 +21,6 @@ services:
       # Configuración de procesamiento
       - CHUNK_SIZE=250
       - CHUNK_OVERLAP=50
-      - TEMP_DIR=/app/temp
-      - PROCESSED_DIR=/app/data/processed
-      - EMBEDDINGS_DIR=/app/data/embeddings
       - DEVICE=cpu
       
       # Configuración de OpenAI (especificar en archivo .env)
@@ -39,6 +36,15 @@ services:
       - GCF_REGION=${GCF_REGION:-southamerica-east1}
       - GCS_CREDENTIALS_PATH=${GCS_CREDENTIALS_PATH}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/cloud_functions/credentials/service-account.json
+      
+      # Configuración de Cloud SQL Database
+      - DB_USER=raguser
+      - DB_PASS=DrCecim2024@
+      - DB_NAME=ragdb
+      - DB_HOST=34.95.166.187
+      - DB_PORT=5432
+      - CLOUD_SQL_CONNECTION_NAME=drcecim-465823:southamerica-east1:drcecim-cloud-sql
+      - DB_PRIVATE_IP=false
       
       # URLs de Cloud Functions (actualizar después del deployment)
       # Nota: Estas variables no se utilizan en la aplicación Streamlit

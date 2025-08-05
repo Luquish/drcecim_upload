@@ -12,7 +12,6 @@ CREATE TABLE IF NOT EXISTS embeddings (
     chunk_id TEXT NOT NULL,
     text_content TEXT NOT NULL,
     embedding_vector vector(1536) NOT NULL,
-    metadata JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -26,7 +25,14 @@ CREATE TABLE IF NOT EXISTS documents (
     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     processing_status TEXT DEFAULT 'pending',
     num_chunks BIGINT DEFAULT 0,
-    metadata JSONB,
+    -- Nuevas columnas extraídas del JSON document_metadata
+    chunk_count INTEGER,
+    total_chars INTEGER,
+    total_words INTEGER,
+    processed_at TIMESTAMP,
+    embedding_model VARCHAR(100),
+    vector_dimension INTEGER,
+    original_filename TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

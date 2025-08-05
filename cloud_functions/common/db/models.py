@@ -3,9 +3,8 @@ Modelos de SQLAlchemy para la base de datos de embeddings.
 """
 import logging
 from datetime import datetime
-from sqlalchemy import Table, Column, BigInteger, Text, DateTime, MetaData
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import registry, declarative_base
+from sqlalchemy import Table, Column, BigInteger, Text, DateTime, MetaData, Integer, String
+from sqlalchemy.orm import declarative_base
 from pgvector.sqlalchemy import Vector
 
 logger = logging.getLogger(__name__)
@@ -27,7 +26,6 @@ class EmbeddingModel(Base):
     chunk_id = Column(Text, nullable=False, index=True)
     text_content = Column(Text, nullable=False)
     embedding_vector = Column(Vector(1536), nullable=False)  # OpenAI text-embedding-3-small
-    document_metadata = Column(JSONB, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -47,7 +45,14 @@ class DocumentModel(Base):
     upload_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     processing_status = Column(Text, default='pending', nullable=False)
     num_chunks = Column(BigInteger, default=0, nullable=False)
-    document_metadata = Column(JSONB, nullable=True)
+    # Nuevas columnas extraídas del JSON document_metadata
+    chunk_count = Column(Integer, nullable=True)
+    total_chars = Column(Integer, nullable=True)
+    total_words = Column(Integer, nullable=True)
+    processed_at = Column(DateTime, nullable=True)
+    embedding_model = Column(String(100), nullable=True)
+    vector_dimension = Column(Integer, nullable=True)
+    original_filename = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -63,7 +68,6 @@ embeddings_table = Table(
     Column("chunk_id", Text, nullable=False, index=True),
     Column("text_content", Text, nullable=False),
     Column("embedding_vector", Vector(1536), nullable=False),
-    Column("document_metadata", JSONB, nullable=True),
     Column("created_at", DateTime, default=datetime.utcnow, nullable=False),
     Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 )
@@ -79,7 +83,14 @@ documents_table = Table(
     Column("upload_date", DateTime, default=datetime.utcnow, nullable=False),
     Column("processing_status", Text, default='pending', nullable=False),
     Column("num_chunks", BigInteger, default=0, nullable=False),
-    Column("document_metadata", JSONB, nullable=True),
+    # Nuevas columnas extraídas del JSON document_metadata
+    Column("chunk_count", Integer, nullable=True),
+    Column("total_chars", Integer, nullable=True),
+    Column("total_words", Integer, nullable=True),
+    Column("processed_at", DateTime, nullable=True),
+    Column("embedding_model", String(100), nullable=True),
+    Column("vector_dimension", Integer, nullable=True),
+    Column("original_filename", Text, nullable=True),
     Column("created_at", DateTime, default=datetime.utcnow, nullable=False),
     Column("updated_at", DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 )

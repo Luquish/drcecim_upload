@@ -120,9 +120,28 @@ class LoggingSettings(BaseSettings):
 class DatabaseSettings(BaseSettings):
     """Configuración de Cloud SQL Database."""
     
+    def __init__(self, **kwargs):
+        # Intentar leer desde st.secrets primero (Streamlit)
+        try:
+            import streamlit as st
+            kwargs.setdefault('db_user', st.secrets.get('DB_USER', 'raguser'))
+            kwargs.setdefault('db_pass', st.secrets.get('DB_PASS', 'DrCecim2024@'))
+            kwargs.setdefault('db_name', st.secrets.get('DB_NAME', 'ragdb'))
+            kwargs.setdefault('cloud_sql_connection_name', st.secrets.get('CLOUD_SQL_CONNECTION_NAME', 'drcecim-465823:southamerica-east1:drcecim-cloud-sql'))
+            kwargs.setdefault('db_private_ip', st.secrets.get('DB_PRIVATE_IP', False))
+            kwargs.setdefault('db_host', st.secrets.get('DB_HOST', '34.95.166.187'))
+            kwargs.setdefault('db_port', st.secrets.get('DB_PORT', 5432))
+        except:
+            # Fallback a variables de entorno
+            pass
+        
+        super().__init__(**kwargs)
+    
     db_user: str = Field(default='raguser', env='DB_USER')
     db_pass: str = Field(default='DrCecim2024@', env='DB_PASS')
     db_name: str = Field(default='ragdb', env='DB_NAME')
+    db_host: str = Field(default='34.95.166.187', env='DB_HOST')
+    db_port: int = Field(default=5432, env='DB_PORT')
     cloud_sql_connection_name: str = Field(
         default='drcecim-465823:southamerica-east1:drcecim-cloud-sql', 
         env='CLOUD_SQL_CONNECTION_NAME'

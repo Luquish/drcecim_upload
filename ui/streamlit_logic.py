@@ -78,10 +78,9 @@ def upload_file_to_bucket(file_data: bytes, filename: str) -> Dict[str, Any]:
         # Esto establecerá la conexión con Google Cloud Storage
         gcs_service = GCSService(bucket_name=GCS_BUCKET_NAME)
         
-        # Generar timestamp único para evitar colisiones de nombres
-        # Formato: YYYYMMDD_HHMMSS para ordenamiento cronológico
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_filename = f"uploads/{filename}_{timestamp}"
+        # Usar nombre original del archivo sin timestamp
+        # Esto permite mejor identificación y evita duplicados innecesarios
+        unique_filename = f"uploads/{filename}"
         
         # Subir archivo al bucket usando el servicio GCS
         # upload_bytes es un método que maneja la subida de datos binarios
@@ -96,7 +95,7 @@ def upload_file_to_bucket(file_data: bytes, filename: str) -> Dict[str, Any]:
                 'success': True,
                 'filename': unique_filename,
                 'original_filename': filename,
-                'timestamp': timestamp,
+                'uploaded_at': datetime.now().isoformat(),
                 'size': len(file_data)
             }
         else:

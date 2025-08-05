@@ -82,7 +82,13 @@ class StreamlitDatabaseService:
                     num_chunks,
                     created_at,
                     updated_at,
-                    document_metadata
+                    chunk_count,
+                    total_chars,
+                    total_words,
+                    processed_at,
+                    embedding_model,
+                    vector_dimension,
+                    original_filename
                 FROM documents 
                 ORDER BY created_at DESC
             """
@@ -104,7 +110,13 @@ class StreamlitDatabaseService:
                     'num_chunks': row['num_chunks'],
                     'created_at': row['created_at'],
                     'updated_at': row['updated_at'],
-                    'document_metadata': row['document_metadata']
+                    'chunk_count': row['chunk_count'],
+                    'total_chars': row['total_chars'],
+                    'total_words': row['total_words'],
+                    'processed_at': row['processed_at'],
+                    'embedding_model': row['embedding_model'],
+                    'vector_dimension': row['vector_dimension'],
+                    'original_filename': row['original_filename']
                 }
                 documents.append(doc)
             

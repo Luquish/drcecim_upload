@@ -65,8 +65,7 @@ class VectorDBService:
                     'document_id': row.get('document_id', 'unknown'),
                     'chunk_id': row.get('chunk_id', f'chunk_{i}'),
                     'text_content': row.get('text', ''),
-                    'embedding_vector': embedding_list[i],
-                    'document_metadata': row.to_dict() if hasattr(row, 'to_dict') else {}
+                    'embedding_vector': embedding_list[i]
                 }
                 records.append(record)
             
@@ -113,15 +112,14 @@ class VectorDBService:
                         'upload_date': upload_date,
                         'processing_status': 'completed',
                         'num_chunks': len(records),
-                        'document_metadata': {
-                            'total_words': sum(metadata_df.get('word_count', [0])),
-                            'total_chars': sum(metadata_df.get('text_length', [0])),
-                            'chunk_count': len(records),
-                            'processed_at': datetime.now().isoformat(),
-                            'original_filename': filename,
-                            'embedding_model': 'OpenAI text-embedding-3-small',
-                            'vector_dimension': 1536
-                        }
+                        # Nuevas columnas individuales en lugar de document_metadata JSON
+                        'chunk_count': len(records),
+                        'total_chars': sum(metadata_df.get('text_length', [0])),
+                        'total_words': sum(metadata_df.get('word_count', [0])),
+                        'processed_at': datetime.now(),
+                        'embedding_model': 'OpenAI text-embedding-3-small',
+                        'vector_dimension': 1536,
+                        'original_filename': filename
                     }
                     
                     # Usar upsert para evitar duplicados
@@ -137,7 +135,13 @@ class VectorDBService:
                             'upload_date': document_info['upload_date'],
                             'processing_status': document_info['processing_status'],
                             'num_chunks': document_info['num_chunks'],
-                            'document_metadata': document_info['document_metadata'],
+                            'chunk_count': document_info['chunk_count'],
+                            'total_chars': document_info['total_chars'],
+                            'total_words': document_info['total_words'],
+                            'processed_at': document_info['processed_at'],
+                            'embedding_model': document_info['embedding_model'],
+                            'vector_dimension': document_info['vector_dimension'],
+                            'original_filename': document_info['original_filename'],
                             'updated_at': datetime.now()
                         }
                     )
@@ -182,7 +186,6 @@ class VectorDBService:
                         text_content,
                         document_id,
                         chunk_id,
-                        document_metadata,
                         embedding_vector <-> :query_embedding as distance
                     FROM embeddings
                     WHERE document_id = :document_id
@@ -200,7 +203,6 @@ class VectorDBService:
                         text_content,
                         document_id,
                         chunk_id,
-                        document_metadata,
                         embedding_vector <-> :query_embedding as distance
                     FROM embeddings
                     ORDER BY embedding_vector <-> :query_embedding
@@ -222,7 +224,6 @@ class VectorDBService:
                         'text_content': row.text_content,
                         'document_id': row.document_id,
                         'chunk_id': row.chunk_id,
-                        'metadata': row.document_metadata,
                         'distance': float(row.distance)
                     }
                     results.append(result_dict)
@@ -257,7 +258,6 @@ class VectorDBService:
                         'document_id': embedding.document_id,
                         'chunk_id': embedding.chunk_id,
                         'text_content': embedding.text_content,
-                        'metadata': embedding.document_metadata,
                         'created_at': embedding.created_at.isoformat() if embedding.created_at else None
                     }
                     results.append(result_dict)
