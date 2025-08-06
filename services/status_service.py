@@ -3,11 +3,9 @@ Servicio de seguimiento de estado para documentos procesados.
 """
 import json
 import logging
-import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from enum import Enum
-from pathlib import Path
 
 from google.cloud import storage
 from config.settings import GCS_BUCKET_NAME

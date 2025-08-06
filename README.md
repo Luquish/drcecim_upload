@@ -82,9 +82,6 @@ GCS_BUCKET_NAME=tu-bucket-drcecim
 GCF_PROJECT_ID=tu-project-id
 SERVICE_ACCOUNT=tu-service-account@proyecto.iam.gserviceaccount.com
 
-# === OPENAI (REQUERIDO) ===  
-OPENAI_API_KEY=sk-proj-tu-nueva-api-key
-
 # === DATABASE ===
 DB_USER=raguser
 DB_PASS=tu-password-seguro
@@ -289,9 +286,6 @@ psql ragdb -c "SELECT version();"
 
 # 2. Verificar extensión pgvector
 psql ragdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
-
-# 3. Verificar OpenAI API key
-echo $OPENAI_API_KEY  # Debe mostrar sk-proj-...
 ```
 
 **❌ Cloud Functions health check falla**

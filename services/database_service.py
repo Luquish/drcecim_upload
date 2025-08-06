@@ -3,13 +3,9 @@ Servicio de base de datos para la aplicación Streamlit de DrCecim Upload.
 Conecta directamente a Cloud SQL PostgreSQL para mostrar datos en tiempo real.
 """
 import streamlit as st
-import pandas as pd
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-import logging
+from typing import List, Dict, Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import os
 
 # Importar configuración centralizada
 from config.settings import config

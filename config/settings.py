@@ -5,7 +5,7 @@ Configuración central para el sistema DrCecim Upload usando Pydantic.
 import os
 from pathlib import Path
 from typing import List, Optional
-from pydantic import Field, validator
+from pydantic import Field
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
@@ -37,26 +37,6 @@ class GoogleCloudSettings(BaseSettings):
     class Config:
         env_prefix = ''
     
-
-
-
-class OpenAISettings(BaseSettings):
-    """Configuración de OpenAI API."""
-    
-    openai_api_key: Optional[str] = Field(default=None, env='OPENAI_API_KEY')
-    embedding_model: str = Field(default='text-embedding-3-small', env='EMBEDDING_MODEL')
-    api_timeout: int = Field(default=30, env='API_TIMEOUT')
-    
-    # Configuración de generación de texto
-    max_output_tokens: int = Field(default=2048, env='MAX_OUTPUT_TOKENS')
-    temperature: float = Field(default=0.7, env='TEMPERATURE')
-    top_p: float = Field(default=1.0, env='TOP_P')
-
-    class Config:
-        env_prefix = ''
-
-
-
 
 class ProcessingSettings(BaseSettings):
     """Configuración de procesamiento de documentos."""
@@ -179,7 +159,6 @@ class DrCecimConfig(BaseSettings):
     
     # Subsecciones de configuración
     google_cloud: GoogleCloudSettings = GoogleCloudSettings()
-    openai: OpenAISettings = OpenAISettings()
     processing: ProcessingSettings = ProcessingSettings()
     streamlit: StreamlitSettings = StreamlitSettings()
     server: ServerSettings = ServerSettings()
@@ -238,9 +217,6 @@ class DrCecimConfig(BaseSettings):
         if not self.google_cloud.gcf_project_id:
             missing_vars.append('GCF_PROJECT_ID')
         
-        # OpenAI API es opcional para el frontend (solo se usa en Cloud Functions)
-        # if not self.openai.openai_api_key:
-        #     missing_vars.append('OPENAI_API_KEY')
         
         if missing_vars:
             raise ValueError(f"Las siguientes variables de entorno son requeridas: {', '.join(missing_vars)}")
@@ -258,14 +234,6 @@ class DrCecimConfig(BaseSettings):
                 'uploads_prefix': self.google_cloud.gcs_uploads_prefix,
                 'temp_prefix': self.google_cloud.gcs_temp_prefix,
             },
-                 'openai': {
-                 'api_key': self.openai.openai_api_key,
-                 'embedding_model': self.openai.embedding_model,
-                 'api_timeout': self.openai.api_timeout,
-                 'max_output_tokens': self.openai.max_output_tokens,
-                 'temperature': self.openai.temperature,
-                 'top_p': self.openai.top_p,
-             },
             'rag': {
                 'chunk_size': self.processing.chunk_size,
                 'chunk_overlap': self.processing.chunk_overlap,
@@ -317,13 +285,6 @@ DB_PASS = config.database.db_pass
 DB_NAME = config.database.db_name
 CLOUD_SQL_CONNECTION_NAME = config.database.cloud_sql_connection_name
 DB_PRIVATE_IP = config.database.db_private_ip
-
-OPENAI_API_KEY = config.openai.openai_api_key
-EMBEDDING_MODEL = config.openai.embedding_model
-API_TIMEOUT = config.openai.api_timeout
-MAX_OUTPUT_TOKENS = config.openai.max_output_tokens
-TEMPERATURE = config.openai.temperature
-TOP_P = config.openai.top_p
 
 CHUNK_SIZE = config.processing.chunk_size
 CHUNK_OVERLAP = config.processing.chunk_overlap

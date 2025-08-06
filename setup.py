@@ -5,25 +5,13 @@ from setuptools import setup, find_packages
 install_requires = [
     # Google Cloud Services
     "google-cloud-storage>=2.10.0,<2.20.0",
-    "google-cloud-secret-manager>=2.16.0,<2.20.0",
-    
-    # Data Processing
-    "pandas>=2.0.0,<2.3.0",
-    "numpy>=1.24.0,<1.27.0",
-    
+        
     # Configuration and Environment
     "python-dotenv>=1.0.0,<1.1.0",
     "pydantic>=2.0.0,<2.6.0",
     "pydantic-settings>=2.0.0,<2.2.0",
     
-    # AI/ML Libraries
-    "openai>=1.3.0,<1.15.0",
-    
-    # PostgreSQL y vectores
-    "pgvector>=0.2.4,<0.3.0",
-    "cloud-sql-python-connector[pg8000]>=1.4.0,<1.5.0",
-    "sqlalchemy>=2.0.23,<2.1.0",
-    "pg8000>=1.30.0,<1.31.0",
+    # PostgreSQL
     "psycopg2-binary>=2.9.0,<3.0.0",  # Para conexión directa a PostgreSQL
     
     # File Processing
@@ -31,7 +19,6 @@ install_requires = [
     
     # Utilities
     "tqdm>=4.65.0,<4.67.0",
-    "tenacity>=8.2.0,<8.3.0",
     "typing-extensions>=4.0.0,<4.10.0",
     "requests>=2.31.0,<2.32.0",
     "psutil>=5.9.0,<5.10.0",  # Para métricas del sistema
@@ -60,6 +47,7 @@ dev_requires = [
 # Dependencias para UI (opcional para desarrollo local)
 ui_requires = [
     "streamlit>=1.28.0,<1.33.0",
+    "pandas>=2.0.0,<3.0.0",
 ]
 
 # Dependencias para Cloud Functions
@@ -146,11 +134,4 @@ setup(
     
     # Minimum package metadata
     zip_safe=False,
-    
-    # Project URLs
-    project_urls={
-        "Bug Reports": "https://github.com/medicina-uba/drcecim-upload/issues",
-        "Source": "https://github.com/medicina-uba/drcecim-upload",
-        "Documentation": "https://github.com/medicina-uba/drcecim-upload/wiki",
-    },
 )

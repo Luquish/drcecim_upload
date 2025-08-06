@@ -77,7 +77,6 @@ main() {
     log "- Python 3.11+"
     log "- Google Cloud SDK (gcloud)"
     log "- Cuenta de Google Cloud con facturación"
-    log "- API Key de OpenAI"
     echo
     
     # Verificar requisitos
@@ -129,17 +128,9 @@ main() {
     read_input "Google Cloud Project ID" "" "PROJECT_ID"
     read_input "Google Cloud Region" "us-central1" "REGION"
     read_input "GCS Bucket Name" "drcecim-chatbot-storage" "BUCKET_NAME"
-    read_input "OpenAI API Key" "" "OPENAI_API_KEY"
-    read_input "Modelo de embeddings" "text-embedding-3-small" "EMBEDDING_MODEL"
     read_input "Tamaño máximo de archivo (MB)" "50" "MAX_FILE_SIZE"
     read_input "Tamaño de chunk" "250" "CHUNK_SIZE"
     read_input "Overlap de chunk" "50" "CHUNK_OVERLAP"
-    
-    # Validar API key
-    if ! validate_api_key "$OPENAI_API_KEY"; then
-        error "API Key de OpenAI inválida"
-        exit 1
-    fi
     
     # Crear archivo .env
     header "CREANDO ARCHIVO .env"
@@ -153,10 +144,6 @@ main() {
 GCS_BUCKET_NAME=$BUCKET_NAME
 GCF_PROJECT_ID=$PROJECT_ID
 GCF_REGION=$REGION
-
-# OpenAI
-OPENAI_API_KEY=$OPENAI_API_KEY
-EMBEDDING_MODEL=$EMBEDDING_MODEL
 
 # Procesamiento
 MAX_FILE_SIZE_MB=$MAX_FILE_SIZE
@@ -260,7 +247,6 @@ EOF
     log "Proyecto: $PROJECT_ID"
     log "Región: $REGION"
     log "Bucket: $BUCKET_NAME"
-    log "Modelo: $EMBEDDING_MODEL"
     log "Tamaño máx: ${MAX_FILE_SIZE}MB"
     log "==============================="
 }

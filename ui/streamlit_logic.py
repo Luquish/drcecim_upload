@@ -2,8 +2,6 @@
 Lógica de negocio para la aplicación Streamlit de DrCecim Upload.
 Contiene las funciones de procesamiento, upload y manejo de estado.
 """
-import requests
-import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 

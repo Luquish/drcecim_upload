@@ -4,10 +4,9 @@ Contiene las funciones de renderizado y componentes de UI reutilizables.
 """
 import streamlit as st
 import pandas as pd
-from typing import Dict, Any, Optional, List
-from datetime import datetime
+from typing import Dict, Any, Optional
 
-from ui.streamlit_utils import format_file_size, validate_file, extract_file_info
+from ui.streamlit_utils import validate_file, extract_file_info
 from ui.streamlit_logic import process_document_upload, add_to_processing_history, get_processing_summary
 from config.streamlit_constants import (
     # Configuración de página

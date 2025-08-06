@@ -1,0 +1,38 @@
+# Archivos de desarrollo y testing
+cloud_functions/
+test_env/
+logs/
+temp/
+*.log
+
+# Archivos de Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Archivos de configuración local
+.env
+.env.local
+.env.development
+
+# Archivos de desarrollo
+setup.sh
+setup.py
+*.md
+.git/
+.gitignore
+
+# Archivos de testing
+test_*.py
+*_test.py
+pytest.ini
+.coverage
+htmlcov/
+
+# Archivos temporales
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so 

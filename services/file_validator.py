@@ -4,9 +4,8 @@ Servicio de validación de archivos PDF simplificado.
 import os
 import logging
 import hashlib
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, Any, Tuple
 from pathlib import Path
-from io import BytesIO
 
 logger = logging.getLogger(__name__)
 

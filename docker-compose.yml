@@ -11,7 +11,7 @@ services:
       - PORT=8501
       
       # Configuración de credenciales de Google Cloud
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/cloud_functions/credentials/service-account.json
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account.json
     
     volumes:
       # Volumen para datos persistentes
@@ -19,7 +19,7 @@ services:
       - drcecim_logs:/app/logs
       - drcecim_temp:/app/temp
       # Montar credenciales de Google Cloud si están disponibles localmente
-      - ./cloud_functions/common/credentials/service-account.json:/app/cloud_functions/credentials/service-account.json:ro
+      - ./credentials/service-account.json:/app/credentials/service-account.json:ro
       # Montar archivo de secrets de Streamlit
       - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
     
