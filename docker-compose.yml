@@ -12,6 +12,13 @@ services:
       
       # Configuración de credenciales de Google Cloud
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account.json
+      
+      # Configuración de base de datos para evitar timeouts
+      - DB_CONNECTION_TIMEOUT=3600
+      - DB_KEEPALIVES_IDLE=600
+      - DB_KEEPALIVES_INTERVAL=30
+      - DB_KEEPALIVES_COUNT=3
+      - DB_MAX_RETRIES=3
     
     volumes:
       # Volumen para datos persistentes

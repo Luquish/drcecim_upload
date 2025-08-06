@@ -6,6 +6,8 @@ import streamlit as st
 from typing import List, Dict, Any
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import time
+from functools import wraps
 
 # Importar configuración centralizada
 from config.settings import config
@@ -23,6 +25,13 @@ class StreamlitDatabaseService:
     def __init__(self):
         """Inicializa el servicio de base de datos."""
         self.conn = None
+        self.last_connection_time = 0
+        # Configuraciones desde variables de entorno o valores por defecto
+        self.connection_timeout = int(st.secrets.get('DB_CONNECTION_TIMEOUT', 3600))  # 1 hora por defecto
+        self.max_retries = int(st.secrets.get('DB_MAX_RETRIES', 3))
+        self.keepalives_idle = int(st.secrets.get('DB_KEEPALIVES_IDLE', 600))  # 10 minutos
+        self.keepalives_interval = int(st.secrets.get('DB_KEEPALIVES_INTERVAL', 30))  # 30 segundos
+        self.keepalives_count = int(st.secrets.get('DB_KEEPALIVES_COUNT', 3))  # 3 intentos
         self._initialize_connection()
     
     def _initialize_connection(self):
@@ -39,15 +48,20 @@ class StreamlitDatabaseService:
             
             logger.info(f"Configuración: {db_user}@{db_host}:{db_port}")
             
-            # Crear conexión usando la configuración de Streamlit secrets
+            # Crear conexión usando la configuración de Streamlit secrets con timeouts optimizados
             self.conn = psycopg2.connect(
                 host=db_host,
                 port=db_port,
                 database=db_name,
                 user=db_user,
                 password=db_pass,
-                cursor_factory=RealDictCursor
+                cursor_factory=RealDictCursor,
+                connect_timeout=10,  # Timeout de conexión de 10 segundos
+                keepalives_idle=self.keepalives_idle,  # Enviar keepalive configurado
+                keepalives_interval=self.keepalives_interval,  # Intervalo entre keepalives configurado
+                keepalives_count=self.keepalives_count  # Número de keepalives configurado
             )
+            self.last_connection_time = time.time()
             logger.info("✅ Conexión a Cloud SQL inicializada exitosamente")
             
         except Exception as e:
@@ -56,6 +70,100 @@ class StreamlitDatabaseService:
             st.error(f"Error de conexión a la base de datos: {str(e)}")
             self.conn = None
     
+    def _is_connection_valid(self) -> bool:
+        """
+        Verifica si la conexión está activa y válida.
+        
+        Returns:
+            bool: True si la conexión es válida
+        """
+        if not self.conn:
+            return False
+        
+        try:
+            # Verificar si la conexión está cerrada
+            if self.conn.closed != 0:
+                return False
+            
+            # Verificar timeout manual
+            current_time = time.time()
+            if (current_time - self.last_connection_time) > self.connection_timeout:
+                logger.warning("🕒 Conexión expirada por timeout, necesita reconexión")
+                return False
+            
+            # Probar con un query simple
+            with self.conn.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+            
+            return True
+            
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            logger.warning(f"⚠️ Conexión inválida detectada: {str(e)}")
+            return False
+        except Exception as e:
+            logger.warning(f"⚠️ Error verificando conexión: {str(e)}")
+            return False
+    
+    def _ensure_connection(self) -> bool:
+        """
+        Asegura que hay una conexión válida, reconectando si es necesario.
+        
+        Returns:
+            bool: True si se logró establecer una conexión válida
+        """
+        if self._is_connection_valid():
+            return True
+        
+        logger.info("🔄 Reconectando a Cloud SQL...")
+        
+        # Cerrar conexión existente si la hay
+        if self.conn:
+            try:
+                self.conn.close()
+            except:
+                pass
+            self.conn = None
+        
+        # Intentar reconectar con reintentos
+        for attempt in range(self.max_retries):
+            try:
+                self._initialize_connection()
+                if self.conn:
+                    logger.info(f"✅ Reconexión exitosa en intento {attempt + 1}")
+                    return True
+            except Exception as e:
+                logger.warning(f"⚠️ Intento de reconexión {attempt + 1} falló: {str(e)}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(2 ** attempt)  # Backoff exponencial
+        
+        logger.error("❌ No se pudo reconectar después de múltiples intentos")
+        return False
+    
+    def _with_retry(func):
+        """Decorador para ejecutar funciones con reintentos automáticos."""
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            if not self._ensure_connection():
+                logger.error("❌ No se pudo establecer conexión a la base de datos")
+                return None if 'get_' in func.__name__ else False
+            
+            try:
+                return func(self, *args, **kwargs)
+            except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+                logger.warning(f"⚠️ Error de conexión detectado, reintentando: {str(e)}")
+                
+                # Intentar reconectar y ejecutar de nuevo
+                if self._ensure_connection():
+                    try:
+                        return func(self, *args, **kwargs)
+                    except Exception as retry_e:
+                        logger.error(f"❌ Error en reintento: {str(retry_e)}")
+                
+                return None if 'get_' in func.__name__ else False
+        return wrapper
+    
+    @_with_retry
     def get_documents_history(self) -> List[Dict[str, Any]]:
         """
         Obtiene el historial de documentos desde Cloud SQL en tiempo real.
@@ -64,11 +172,6 @@ class StreamlitDatabaseService:
             List[Dict]: Lista de documentos con su información completa
         """
         logger.info("🔄 Obteniendo documentos desde Cloud SQL...")
-        
-        if not self.conn:
-            logger.error("❌ No hay conexión a la base de datos")
-            st.error("No hay conexión a la base de datos")
-            return []
         
         try:
             # Query para obtener documentos ordenados por fecha de creación
@@ -131,6 +234,7 @@ class StreamlitDatabaseService:
     
 
     
+    @_with_retry
     def get_documents_summary(self) -> Dict[str, Any]:
         """
         Obtiene un resumen estadístico de los documentos desde Cloud SQL.
@@ -139,15 +243,6 @@ class StreamlitDatabaseService:
             Dict: Resumen con estadísticas relevantes para empleadores
         """
         logger.info("🔄 Obteniendo resumen de documentos desde Cloud SQL...")
-        
-        if not self.conn:
-            logger.error("❌ No hay conexión a la base de datos")
-            return {
-                'total_documents': 0,
-                'completed_documents': 0,
-                'processing_documents': 0,
-                'error_documents': 0
-            }
         
         try:
             # Query para obtener estadísticas básicas
@@ -247,25 +342,20 @@ class StreamlitDatabaseService:
         Returns:
             bool: True si la conexión es exitosa
         """
+        """
+        Prueba la conexión usando el método _is_connection_valid() que ya maneja reconexión.
+        """
         logger.info("🔍 Probando conexión a Cloud SQL...")
         
-        if not self.conn:
-            logger.error("❌ No hay conexión disponible")
-            return False
+        # Usar el método de validación que incluye reconexión automática
+        is_valid = self._is_connection_valid()
         
-        try:
-            # Query simple para probar la conexión
-            with self.conn.cursor() as cursor:
-                cursor.execute("SELECT 1 as test")
-                result = cursor.fetchone()
-            
-            success = result is not None
-            logger.info(f"✅ Prueba de conexión a Cloud SQL: {'EXITOSA' if success else 'FALLIDA'}")
-            return success
-        except Exception as e:
-            logger.error(f"❌ Error en prueba de conexión a Cloud SQL: {str(e)}")
-            logger.error(f"Tipo de error: {type(e).__name__}")
-            return False
+        if not is_valid:
+            # Intentar reconectar si la validación falló
+            is_valid = self._ensure_connection()
+        
+        logger.info(f"✅ Prueba de conexión a Cloud SQL: {'EXITOSA' if is_valid else 'FALLIDA'}")
+        return is_valid
 
 
 # Instancia global del servicio
